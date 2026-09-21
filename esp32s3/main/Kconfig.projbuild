@@ -1,0 +1,121 @@
+menu "Hoverboard ROS bridge"
+
+    choice HB_WIFI_MODE
+        prompt "WiFi mode"
+        default HB_WIFI_MODE_AP
+        config HB_WIFI_MODE_OFF
+            bool "Off"
+        config HB_WIFI_MODE_STA
+            bool "Station (join an existing network)"
+        config HB_WIFI_MODE_AP
+            bool "Access point (the ESP creates its own network)"
+    endchoice
+
+    config HB_WIFI_SSID
+        string "WiFi SSID"
+        default "hoverboard-robot"
+        depends on !HB_WIFI_MODE_OFF
+        help
+            Station: network to join. Access point: name of the network created by the ESP.
+
+    config HB_WIFI_PASSWORD
+        string "WiFi password"
+        default "change-me-now"
+        depends on !HB_WIFI_MODE_OFF
+        help
+            Access point mode requires at least 8 characters.
+
+    config HB_WIFI_AP_CHANNEL
+        int "Access point channel"
+        range 1 13
+        default 6
+        depends on HB_WIFI_MODE_AP
+
+    config HB_HOSTNAME
+        string "mDNS hostname"
+        default "hoverboard"
+
+    config HB_USB_NET
+        bool "Enable USB tethering (CDC-NCM network, ESP at 192.168.7.1)"
+        default y
+
+    config HB_UDP_PORT
+        int "UDP port"
+        range 1024 65535
+        default 8888
+
+    config HB_HOVER_RX_GPIO
+        int "Hoverboard UART RX GPIO"
+        default 4
+
+    config HB_HOVER_TX_GPIO
+        int "Hoverboard UART TX GPIO"
+        default 5
+
+    config HB_HOVER_BAUD
+        int "Hoverboard UART baud (must match USART3_BAUD in firmware)"
+        default 115200
+
+    config HB_CMD_TIMEOUT_MS
+        int "Stop wheels if no command for this time [ms]"
+        range 50 2000
+        default 300
+
+    config HB_CMD_LIMIT
+        int "Wheel command clamp (1000 = N_MOT_MAX)"
+        range 0 1000
+        default 1000
+
+    config HB_ENABLE_IMU
+        bool "Enable WT901C IMU on UART0"
+        default n
+        help
+            UART0 is also the default console. Set Component config > ESP System Settings >
+            Channel for console output = None when enabling the IMU.
+
+    config HB_IMU_RX_GPIO
+        int "IMU UART RX GPIO"
+        default 6
+        depends on HB_ENABLE_IMU
+
+    config HB_IMU_BAUD
+        int "IMU UART baud"
+        default 9600
+        depends on HB_ENABLE_IMU
+
+    config HB_ENABLE_LIDAR
+        bool "Enable LIDAR pass-through on UART2"
+        default y
+
+    config HB_LIDAR_RX_GPIO
+        int "LIDAR UART RX GPIO"
+        default 18
+        depends on HB_ENABLE_LIDAR
+
+    config HB_LIDAR_TX_GPIO
+        int "LIDAR UART TX GPIO"
+        default 17
+        depends on HB_ENABLE_LIDAR
+
+    config HB_LIDAR_BAUD
+        int "LIDAR UART baud"
+        default 230400
+        depends on HB_ENABLE_LIDAR
+
+    config HB_LIDAR_AUTOSTART
+        bool "Send the LDROBOT start command to the LIDAR"
+        default y
+        depends on HB_ENABLE_LIDAR
+        help
+            The STL-50B2 stays silent until it receives 54 A0 04 00 00 00 00 5E.
+            Disable only to drive the LIDAR entirely from the PC over LIDAR_TX.
+
+    config HB_LIDAR_START_RETRY_MS
+        int "LIDAR start command retry period [ms]"
+        default 1000
+        depends on HB_LIDAR_AUTOSTART
+        help
+            The start command is resent this often while no LIDAR bytes arrive,
+            so a command lost during power-up does not leave the line silent.
+
+endmenu
