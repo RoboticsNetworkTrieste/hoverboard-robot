@@ -89,12 +89,12 @@ menu "Hoverboard ROS bridge"
 
     config HB_LIDAR_RX_GPIO
         int "LIDAR UART RX GPIO"
-        default 18
+        default 7
         depends on HB_ENABLE_LIDAR
 
     config HB_LIDAR_TX_GPIO
         int "LIDAR UART TX GPIO"
-        default 17
+        default 8
         depends on HB_ENABLE_LIDAR
 
     config HB_LIDAR_BAUD
