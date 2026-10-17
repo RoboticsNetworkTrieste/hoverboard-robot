@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **Two machines.** The development machine is Windows and has **no C++ compiler and no ROS2**. Do not look for `g++`, `colcon` or `ros2` on it, and do not try to install them: the steps that need them run on a separate Ubuntu PC. See "Where each step runs" below before executing any step.
+> **One machine, ROS2 in Docker.** Everything runs on the Ubuntu 24.04 development PC. ROS2 Humble is not installed on the host: it runs in the Docker container defined in `tools/docker-humble` (Task 5). The host has ROS2 Jazzy installed; do not use it for this project. See "Where each step runs" below before executing any step.
 
 **Goal:** An ESP32-S3 firmware that bridges the hoverboard mainboard, a WT901C IMU and a 2D LIDAR to a ROS2 Humble PC using UDP, carried over WiFi (station or access point) or USB tethering, plus the ROS2 Python node on the PC.
 
 **Architecture:** The ESP32-S3 runs one single-threaded bridge loop that polls three UARTs and one UDP socket bound to all network interfaces (WiFi and USB CDC-NCM). Every message, in both directions, is a UDP datagram with a 7-byte header. The ESP replies to the address of the last PC that sent a valid wheel command, so the PC chooses the medium by the IP it targets. On the PC, an `rclpy` node converts `/cmd_vel` into wheel commands and publishes odometry, TF, joint states, IMU, battery and temperature. It also exposes the raw LIDAR byte stream on a pseudo terminal for a serial LIDAR driver.
 
-**Tech Stack:** ESP-IDF v5.4.x (C++17), `espressif/esp_tinyusb` 1.x (CDC-NCM), `espressif/mdns`, FreeRTOS, lwIP sockets. ROS2 Humble on Ubuntu 22.04, Python 3.10, `rclpy`, `ament_python`, pytest. Host C++ tests are built with g++ on the Ubuntu PC, not on the Windows development machine.
+**Tech Stack:** ESP-IDF v5.4.x (C++17), `espressif/esp_tinyusb` 1.x (CDC-NCM), `espressif/mdns`, FreeRTOS, lwIP sockets. ROS2 Humble (Ubuntu 22.04, Python 3.10) inside a Docker container, `rclpy`, `ament_python`, pytest. Host C++ tests are built with the host g++.
 
 **Spec:** No separate spec document. The design decisions from the conversation are summarized in "Design Summary" below. Executors must read that section first.
 
@@ -20,7 +20,7 @@ USB tethering requires the ESP32-S3 to act as a USB network card (CDC-NCM). The 
 ### Transports (all carry the same UDP datagrams)
 | Medium | Kconfig | ESP IP | PC reaches ESP at |
 |---|---|---|---|
-| WiFi station | `HB_WIFI_MODE_STA` + `HB_WIFI_SSID`/`HB_WIFI_PASSWORD` | DHCP from router | `hoverboard.local` (mDNS) or router-assigned IP |
+| WiFi station | `HB_WIFI_MODE_STA` + `HB_WIFI_SSID`/`HB_WIFI_PASSWORD` | Static `HB_WIFI_STA_IP` (default `192.168.1.50`), or DHCP from the router if `HB_WIFI_STA_STATIC_IP` is off | the static IP; `hoverboard.local` (mDNS) also works from the host |
 | WiFi access point | `HB_WIFI_MODE_AP` + `HB_WIFI_SSID`/`HB_WIFI_PASSWORD` | `192.168.4.1` (DHCP server) | `192.168.4.1` |
 | USB tethering (CDC-NCM) | `HB_USB_NET=y` | `192.168.7.1` (DHCP server gives the PC `192.168.7.2`, no default route) | `192.168.7.1` |
 
@@ -90,29 +90,31 @@ ESP wheel values are raw from the firmware: `ticks_*` are the unwrapped `wheel*_
 - Command packet: `uint16 start=0xABCD, int16 steer, int16 speed, uint16 checksum = start^steer^speed` (8 bytes).
 - Feedback packet (22 bytes): `start, cmd1, cmd2, speedR_meas, speedL_meas, wheelR_cnt, wheelL_cnt, batVoltage, boardTemp, cmdLed, checksum`. The checksum is the XOR of all previous fields.
 - `wheel*_cnt` counts hall transitions modulo 9000.
-- Without `INVERT_*_DIRECTION` the firmware negates the right command internally, while `n_mot` of the right motor has the opposite sign of forward motion. The PC defaults are therefore `right_feedback_sign = -1`, to be verified in Task 13.
+- Without `INVERT_*_DIRECTION` the firmware negates the right command internally, while `n_mot` of the right motor has the opposite sign of forward motion. The PC defaults are therefore `right_feedback_sign = -1`, to be verified in Task 14.
 
 ## Global Constraints
 
 - All code comments, logs and identifiers in English. Comments short and useful; no historical "changed from" comments.
-- Ask the user for confirmation before any non read-only git action (commit, push, branch) and before flashing any device.
+- Version control is handled by the user: tasks contain no git steps and executors run no git write operations. Ask the user for confirmation before flashing any device.
 - ESP-IDF v5.4.x, target `esp32s3`. `espressif/esp_tinyusb` major version 1 (the `tinyusb_net_init` / `tinyusb_net_send_sync` API used here is the 1.x API).
-- ROS2 Humble, Ubuntu 22.04, Python 3.10. No third-party Python dependencies beyond the ROS2 Humble desktop install.
+- ROS2 Humble, Ubuntu 22.04, Python 3.10, all inside the `tools/docker-humble` image. No third-party Python dependencies beyond the ROS2 Humble desktop install. `link_probe` must also run with the host Python 3.12 (standard library only).
 - The hoverboard firmware configuration is not changed by this plan. It is already built and flashed with the settings listed under "Hoverboard firmware facts"; no STM32 work and no reflashing of the mainboard is part of this plan.
 - Wire formats must match byte-for-byte between `components/hover_core` (C++) and `hoverboard_bridge/link_protocol.py` (Python). The golden vectors in the tests are the reference.
 - WiFi credentials live only in the local `sdkconfig`, which is git-ignored. `sdkconfig.defaults` must not contain real credentials.
-- Tests are intentionally minimal (golden vectors and a few behaviours). They are written on the Windows machine but compiled and run on the Ubuntu PC, so a task can be finished on Windows with its tests still unrun; say so plainly rather than claiming they pass.
+- Tests are intentionally minimal (golden vectors and a few behaviours). Every test step must actually be run; report failures plainly rather than claiming tests pass.
 
 ### Where each step runs
 
-| Machine | Toolchain | Used by |
+| Where | Toolchain | Used by |
 |---|---|---|
-| Windows dev machine | editor, `idf.py` (ESP-IDF v5.4.x), USB flashing of the ESP | Tasks 1, 6, 7, 8, 9 |
-| Ubuntu 22.04 PC | `g++` for `test_host/run_tests.sh`, ROS2 Humble, `colcon`, `pytest` | Tasks 2, 3, 4 (host tests), 5, 10, 11, 12, 13 |
+| Host (Ubuntu 24.04) | ESP-IDF v5.4.4 in `~/esp/esp-idf`, `g++`, Docker, USB flashing of the ESP | Tasks 1–4, 7–10, ESP hardware checks |
+| Container (`tools/docker-humble`) | ROS2 Humble, `colcon`, `pytest`, `ldlidar_stl_ros2` | Tasks 6, 11, 12, 13, 14 |
 
-The Windows machine has no C++ compiler and no ROS2 installation, and none is planned. A step whose command is `bash test_host/run_tests.sh`, `colcon`, `ros2` or `pytest` runs on the Ubuntu PC; writing and editing the files for those steps still happens on Windows, on the shared repository.
+Host steps: run `. ~/esp/esp-idf/export.sh` once per terminal so `idf.py` is on PATH. On this PC the ESP serial port is usually `/dev/ttyACM0` (the user is in the `dialout` group).
 
-`link_probe` is the exception: it imports only `argparse`, `socket`, `time` and `link_protocol`, so plain Python 3 runs it from either machine, whichever is on the robot network.
+Container steps are marked "(container)". Open a shell with `tools/docker-humble/run.sh` (from the repo root), or pass the command directly: `tools/docker-humble/run.sh <command>`. Inside the container the repo folder `ros2/` is mounted at `/ws/src`, so the package lives at `/ws/src/hoverboard_bridge`, and the workspace root is `/ws`. The container uses host networking, so it reaches the ESP over WiFi and USB tethering exactly like the host. It has no mDNS resolver, so it always targets the ESP by IP; in station mode that is the static `HB_WIFI_STA_IP`.
+
+`link_probe` is the exception: it imports only `argparse`, `socket`, `time` and `link_protocol`, so the host Python runs it directly from `ros2/hoverboard_bridge`, without the container.
 
 ## File Structure
 
@@ -126,7 +128,7 @@ esp32s3/                 ESP-IDF project (ESP32-S3 firmware)
     idf_component.yml                 Managed deps: esp_tinyusb, mdns
     Kconfig.projbuild                 "Hoverboard ROS bridge" menuconfig menu
     main.cpp                          app_main: init NVS/netif, start networks, run bridge
-    net_wifi.h / net_wifi.cpp         WiFi STA or AP + mDNS
+    net_wifi.h / net_wifi.cpp         WiFi STA (static IP or DHCP) or AP + mDNS
     net_usb.h / net_usb.cpp           USB CDC-NCM network interface with DHCP server
     udp_link.h / udp_link.cpp         Non-blocking UDP socket, peer tracking
     uart_port.h / uart_port.cpp       Thin non-blocking UART wrapper
@@ -147,6 +149,14 @@ esp32s3/                 ESP-IDF project (ESP32-S3 firmware)
   test_host/
     test_core.cpp                     Host tests for hover_core (golden vectors)
     run_tests.sh                      Builds and runs host tests with g++
+
+tools/docker-humble/                  ROS2 Humble development container
+  Dockerfile                          Humble desktop image, host-matching user, ldlidar_stl_ros2 underlay
+  compose.yaml                        Host network/IPC, X11, ros2/ mounted as /ws/src
+  ros_env.sh                          Sources ROS2, the LIDAR underlay and the workspace overlay
+  entrypoint.sh                       Sources ros_env.sh, then runs the command
+  run.sh                              Opens a shell or runs a command in the container
+  README.md                           Usage
 
 ros2/hoverboard_bridge/               ROS2 Humble ament_python package
   package.xml
@@ -170,7 +180,7 @@ ros2/hoverboard_bridge/               ROS2 Humble ament_python package
     test_lidar_pty.py                 Linux only
 ```
 
-Execution order note: Tasks 1–5 and 10–12 need no hardware. Tasks 6–9 can be written and compiled now; their hardware verification steps wait for the ESP32-S3. Task 13 needs the full robot.
+Execution order note: Tasks 1–6 and 11–13 need no hardware. Tasks 7–10 can be written and compiled now; their hardware verification steps wait for the ESP32-S3. Task 15 needs the full robot.
 
 ---
 
@@ -192,7 +202,7 @@ Execution order note: Tasks 1–5 and 10–12 need no hardware. Tasks 6–9 can 
 
 - [x] **Step 1: Install ESP-IDF v5.4.x**
 
-Install ESP-IDF v5.4 with the VS Code "ESP-IDF" extension (Express setup, version v5.4.x) or the Windows ESP-IDF installer. Open an "ESP-IDF terminal" so `idf.py` is on PATH.
+ESP-IDF v5.4.4 is installed in `~/esp/esp-idf`. Run `. ~/esp/esp-idf/export.sh` so `idf.py` is on PATH.
 
 Run: `idf.py --version`
 Expected: `ESP-IDF v5.4.x`
@@ -216,7 +226,7 @@ CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
 CONFIG_COMPILER_CXX_EXCEPTIONS=n
 ```
 
-`esp32s3/main/CMakeLists.txt` (Task 1 version, extended in Tasks 6–8):
+`esp32s3/main/CMakeLists.txt` (Task 1 version, extended in Tasks 7–9):
 ```cmake
 idf_component_register(
     SRCS "main.cpp"
@@ -369,7 +379,7 @@ endmenu
 
 - [x] **Step 4: Write a minimal main**
 
-`esp32s3/main/main.cpp` (Task 1 version, replaced in Task 8):
+`esp32s3/main/main.cpp` (Task 1 version, replaced in Task 9):
 ```cpp
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -432,7 +442,7 @@ Press RESET after flashing to start the firmware.
 |---|---|
 | USB tethering | 192.168.7.1 (PC gets 192.168.7.2 by DHCP) |
 | WiFi access point | 192.168.4.1 |
-| WiFi station | hoverboard.local or the router-assigned IP |
+| WiFi station | the static IP set in menuconfig (default 192.168.1.50), or hoverboard.local |
 
 UDP port: 8888. Quick test without ROS, from any machine with Python 3 on the robot network:
 `python3 -m hoverboard_bridge.link_probe --host <ESP address>` (run from `ros2/hoverboard_bridge`).
@@ -457,13 +467,6 @@ Expected: build succeeds. `managed_components/espressif__esp_tinyusb` and `espre
 
 Run: `idf.py menuconfig`
 Expected: "Hoverboard ROS bridge" menu shows all options. Under Component config > TinyUSB Stack, the network driver is NCM.
-
-- [ ] **Step 8: Commit (ask the user first)**
-
-```bash
-git add .gitignore esp32s3
-git commit -m "add: ESP-IDF skeleton for hoverboard_ros bridge"
-```
 
 ---
 
@@ -549,7 +552,7 @@ int main()
 `esp32s3/test_host/run_tests.sh`:
 ```bash
 #!/usr/bin/env bash
-# Builds hover_core with the host compiler and runs the tests (Ubuntu or WSL).
+# Builds hover_core with the host compiler and runs the tests.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 g++ -std=c++17 -Wall -Wextra -I components/hover_core/include \
@@ -557,9 +560,9 @@ g++ -std=c++17 -Wall -Wextra -I components/hover_core/include \
 /tmp/hover_core_tests
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails** (skipped: the implementation already existed when the tests were first run)
 
-Run (Ubuntu or WSL, from `esp32s3`): `bash test_host/run_tests.sh`
+Run (from `esp32s3`): `bash test_host/run_tests.sh`
 Expected: compile error, `hover_core/hover_protocol.h: No such file or directory`.
 
 - [x] **Step 3: Implement the protocol**
@@ -706,17 +709,10 @@ idf_component_register(
     INCLUDE_DIRS "include")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `bash test_host/run_tests.sh`
 Expected: `All host tests passed`
-
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add esp32s3/components esp32s3/test_host
-git commit -m "add: hover_core hoverboard UART protocol with host tests"
-```
 
 ---
 
@@ -839,7 +835,7 @@ In `main()`, add after `testHoverProtocol();`:
     testLidarStarter();
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails** (skipped: the implementation already existed when the tests were first run)
 
 Run: `bash test_host/run_tests.sh`
 Expected: compile error, `hover_core/cmd_watchdog.h: No such file or directory`.
@@ -1110,17 +1106,10 @@ idf_component_register(
     INCLUDE_DIRS "include")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `bash test_host/run_tests.sh`
 Expected: `All host tests passed`
-
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add esp32s3/components esp32s3/test_host
-git commit -m "add: hover_core UDP link protocol, command watchdog, LIDAR chunker and starter"
-```
 
 ---
 
@@ -1167,7 +1156,7 @@ static void testWt901Parser()
 ```
 Add `testWt901Parser();` in `main()` after the other test calls.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails** (skipped: the implementation already existed when the tests were first run)
 
 Run: `bash test_host/run_tests.sh`
 Expected: compile error, `hover_core/wt901_parser.h: No such file or directory`.
@@ -1261,24 +1250,201 @@ idf_component_register(
     INCLUDE_DIRS "include")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `bash test_host/run_tests.sh`
 Expected: `All host tests passed`
 
-Run (ESP-IDF terminal, from `esp32s3`): `idf.py build`
+Run (host, from `esp32s3`): `idf.py build`
 Expected: build succeeds (hover_core compiles for the ESP32-S3 too).
-
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add esp32s3/components esp32s3/test_host
-git commit -m "add: hover_core WT901 IMU parser"
-```
 
 ---
 
-### Task 5: ROS2 package skeleton, Python link protocol and bench probe
+### Task 5: ROS2 Humble development container
+
+**Files:**
+- Create: `tools/docker-humble/Dockerfile`
+- Create: `tools/docker-humble/compose.yaml`
+- Create: `tools/docker-humble/ros_env.sh`
+- Create: `tools/docker-humble/entrypoint.sh`
+- Create: `tools/docker-humble/run.sh` (executable)
+- Create: `tools/docker-humble/README.md`
+- Modify: `.gitignore` (append Python test and build artefacts)
+
+**Interfaces:**
+- Produces: `tools/docker-humble/run.sh [--build] [command...]`, which opens a shell (or runs a command) in a ROS2 Humble container with:
+  - host networking and host IPC (UDP to the ESP, DDS discovery and shared memory)
+  - repo `ros2/` mounted at `/ws/src`, with `/ws/build`, `/ws/install` and `/ws/log` in named volumes so the repo stays clean
+  - a user with the host UID/GID, so files created in `/ws/src` belong to the host user
+  - `ldlidar_stl_ros2` prebuilt in the underlay `/opt/ldlidar_ws`
+  - ROS2, the underlay and (when built) the `/ws/install` overlay sourced in every shell and command
+  - X11 forwarding for `rviz2`
+
+- [ ] **Step 1: Write the container files**
+
+`tools/docker-humble/Dockerfile`:
+```dockerfile
+# ROS2 Humble environment for the hoverboard_bridge workspace.
+FROM osrf/ros:humble-desktop
+
+ARG USERNAME=ros
+ARG USER_UID=1000
+ARG USER_GID=1000
+ARG LDLIDAR_REF=master
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git python3-pytest python3-colcon-common-extensions iproute2 iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid ${USER_GID} ${USERNAME} \
+    && useradd --uid ${USER_UID} --gid ${USER_GID} --create-home --shell /bin/bash ${USERNAME}
+
+# LIDAR driver, built once as an underlay.
+RUN mkdir -p /opt/ldlidar_ws/src \
+    && git clone https://github.com/ldrobotSensorTeam/ldlidar_stl_ros2.git /opt/ldlidar_ws/src/ldlidar_stl_ros2 \
+    && git -C /opt/ldlidar_ws/src/ldlidar_stl_ros2 checkout ${LDLIDAR_REF} \
+    && cd /opt/ldlidar_ws \
+    && . /opt/ros/humble/setup.sh \
+    && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release \
+    && rm -rf build log
+
+# Named volumes inherit this ownership on first use.
+RUN mkdir -p /ws/src /ws/build /ws/install /ws/log && chown -R ${USER_UID}:${USER_GID} /ws
+
+COPY ros_env.sh entrypoint.sh /opt/hoverboard/
+RUN chmod +x /opt/hoverboard/entrypoint.sh \
+    && echo 'source /opt/hoverboard/ros_env.sh' >> /home/${USERNAME}/.bashrc
+
+USER ${USERNAME}
+WORKDIR /ws
+ENTRYPOINT ["/opt/hoverboard/entrypoint.sh"]
+CMD ["bash"]
+```
+
+`tools/docker-humble/ros_env.sh`:
+```bash
+# Sources ROS2 Humble, the LIDAR driver underlay and the workspace overlay (if built).
+source /opt/ros/humble/setup.bash
+source /opt/ldlidar_ws/install/setup.bash
+if [ -f /ws/install/setup.bash ]; then
+    source /ws/install/setup.bash
+fi
+```
+
+`tools/docker-humble/entrypoint.sh`:
+```bash
+#!/usr/bin/env bash
+# Runs the container command with the ROS2 environment sourced.
+source /opt/hoverboard/ros_env.sh
+exec "$@"
+```
+
+`tools/docker-humble/compose.yaml`:
+```yaml
+# ROS2 Humble container for the hoverboard_bridge workspace. Start it with run.sh.
+services:
+  humble:
+    build:
+      context: .
+      args:
+        USER_UID: ${HOST_UID:-1000}
+        USER_GID: ${HOST_GID:-1000}
+    image: hoverboard-robot/humble
+    network_mode: host   # same interfaces as the host: WiFi and USB tethering to the ESP
+    ipc: host            # DDS shared memory works between containers on the host network
+    environment:
+      - DISPLAY=${DISPLAY:-}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    volumes:
+      - ../../ros2:/ws/src
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ws_build:/ws/build
+      - ws_install:/ws/install
+      - ws_log:/ws/log
+    stdin_open: true
+    tty: true
+
+volumes:
+  ws_build:
+  ws_install:
+  ws_log:
+```
+
+`tools/docker-humble/run.sh`:
+```bash
+#!/usr/bin/env bash
+# Opens a shell, or runs the given command, in the ROS2 Humble container.
+# --build rebuilds the image first (needed after editing the Dockerfile).
+set -euo pipefail
+cd "$(dirname "$0")"
+export HOST_UID="$(id -u)" HOST_GID="$(id -g)"
+if [[ "${1:-}" == "--build" ]]; then
+    shift
+    docker compose build
+fi
+exec docker compose run --rm humble "$@"
+```
+
+`tools/docker-humble/README.md`:
+````markdown
+# ROS2 Humble container
+
+The ROS2 side of the project targets Humble. This container provides it on any Linux host with Docker.
+
+```
+tools/docker-humble/run.sh --build     # first time, or after editing the Dockerfile
+tools/docker-humble/run.sh             # interactive shell
+tools/docker-humble/run.sh <command>   # one command, e.g. ros2 topic list
+```
+
+- `ros2/` from this repo is mounted at `/ws/src`; build with `colcon build --symlink-install` from `/ws`.
+  Build outputs live in Docker volumes, not in the repo. `docker compose down -v` (from this folder) wipes them.
+- Host networking: the container reaches the ESP at the same addresses as the host
+  (192.168.7.1 over USB, 192.168.4.1 on the ESP access point, the static IP from menuconfig in
+  station mode). `hoverboard.local` does not resolve inside the container: use the IP.
+- `ldlidar_stl_ros2` is prebuilt in the image.
+- GUI tools (`rviz2`): run `xhost +local:` on the host once per login session.
+- Every shell opened with `run.sh` is a new container; several can run at the same time and see each other's topics.
+````
+
+Append to `.gitignore`:
+```
+.pytest_cache/
+*.egg-info/
+```
+
+Run: `chmod +x tools/docker-humble/run.sh`
+
+- [ ] **Step 2: Build the image**
+
+Run (host, from the repo root): `tools/docker-humble/run.sh --build ros2 pkg prefix ldlidar_stl_ros2`
+Expected: the image builds and the command prints `/opt/ldlidar_ws/install/ldlidar_stl_ros2`. If `ldlidar_stl_ros2` fails to compile on Humble, stop and report the error; do not patch the driver.
+
+- [ ] **Step 3: Check the environment**
+
+Run: `tools/docker-humble/run.sh bash -c 'echo $ROS_DISTRO; python3 --version; python3 -m pytest --version; id -u'`
+Expected: `humble`, `Python 3.10.x`, a pytest version, and the same number as `id -u` on the host.
+
+Run: `tools/docker-humble/run.sh touch /ws/src/.owner_check && ls -n ros2/.owner_check && rm ros2/.owner_check`
+Expected: the file is owned by the host UID and GID.
+
+Run: `tools/docker-humble/run.sh ip -br addr`
+Expected: the same interfaces as `ip -br addr` on the host.
+
+- [ ] **Step 4: Check DDS between two containers**
+
+Run in one terminal: `tools/docker-humble/run.sh ros2 run demo_nodes_cpp talker`
+Run in a second terminal: `tools/docker-humble/run.sh ros2 topic echo --once /chatter`
+Expected: the second terminal prints one `Hello World: N` message and exits. Stop the talker with Ctrl+C.
+
+- [ ] **Step 5: Check the GUI (optional, needs a desktop session)**
+
+Run: `xhost +local:` then `tools/docker-humble/run.sh rviz2`
+Expected: the RViz window opens. Close it.
+
+---
+
+### Task 6: ROS2 package skeleton, Python link protocol and bench probe
 
 **Files:**
 - Create: `ros2/hoverboard_bridge/package.xml`
@@ -1333,7 +1499,7 @@ def test_short_inputs_are_rejected():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run (from `ros2/hoverboard_bridge`): `python3 -m pytest test/test_link_protocol.py -q`
+Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_link_protocol.py -q`
 Expected: FAIL with `ModuleNotFoundError` / `ImportError` for `hoverboard_bridge.link_protocol`.
 
 - [ ] **Step 3: Write the package files**
@@ -1494,12 +1660,12 @@ def parse_imu(body):
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `python3 -m pytest test/test_link_protocol.py -q`
+Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_link_protocol.py -q`
 Expected: `3 passed`
 
 - [ ] **Step 6: Write the bench probe**
 
-It runs without ROS: `python3 -m hoverboard_bridge.link_probe` from `ros2/hoverboard_bridge`, on Linux or Windows.
+It runs without ROS: `python3 -m hoverboard_bridge.link_probe` from `ros2/hoverboard_bridge`, with the host Python or in the container.
 
 `ros2/hoverboard_bridge/hoverboard_bridge/link_probe.py`:
 ```python
@@ -1543,7 +1709,7 @@ def print_ticks_per_rev(first, last, elapsed, rpm_sum, rpm_count):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='192.168.7.1',
-                        help='ESP address: USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA hoverboard.local')
+                        help='ESP address: USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA its static IP')
     parser.add_argument('--port', type=int, default=8888)
     parser.add_argument('--left', type=int, default=0, help='Left wheel command (-1000..1000)')
     parser.add_argument('--right', type=int, default=0, help='Right wheel command (-1000..1000)')
@@ -1611,31 +1777,61 @@ if __name__ == '__main__':
 
 - [ ] **Step 7: Smoke test the probe without hardware**
 
-Run (from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 127.0.0.1 --duration 1`
+Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 127.0.0.1 --duration 1`
 Expected: prints `no telemetry` about 5 times and exits with code 0.
-
-- [ ] **Step 8: Commit (ask the user first)**
-
-```bash
-git add ros2/hoverboard_bridge
-git commit -m "add: hoverboard_bridge package with UDP protocol and bench probe"
-```
 
 ---
 
-### Task 6: ESP networking – WiFi station or access point with mDNS
+### Task 7: ESP networking – WiFi station (static IP) or access point with mDNS
 
 **Files:**
+- Modify: `esp32s3/main/Kconfig.projbuild`
 - Create: `esp32s3/main/net_wifi.h`
 - Create: `esp32s3/main/net_wifi.cpp`
 - Modify: `esp32s3/main/main.cpp`
 - Modify: `esp32s3/main/CMakeLists.txt`
+- Modify: `esp32s3/README.md`
 
 **Interfaces:**
 - Consumes: `CONFIG_HB_WIFI_*`, `CONFIG_HB_HOSTNAME` (Task 1).
+- Produces: Kconfig symbols `HB_WIFI_STA_STATIC_IP`, `HB_WIFI_STA_IP`, `HB_WIFI_STA_NETMASK`, `HB_WIFI_STA_GATEWAY`.
 - Produces: `esp_err_t wifi_start();`. It must be called after `nvs_flash_init()`, `esp_netif_init()` and `esp_event_loop_create_default()`.
 
-- [ ] **Step 1: Implement WiFi start**
+- [ ] **Step 1: Add the static IP options**
+
+In `main/Kconfig.projbuild`, insert after the `HB_WIFI_AP_CHANNEL` entry:
+```
+    config HB_WIFI_STA_STATIC_IP
+        bool "Station: use a static IP"
+        default y
+        depends on HB_WIFI_MODE_STA
+        help
+            Gives the ESP a fixed address on the router network, so the PC (and the ROS2
+            container, which has no mDNS) can reach it without discovery. Choose an address
+            in the router subnet but outside its DHCP pool. Off: the router assigns the IP.
+
+    config HB_WIFI_STA_IP
+        string "Station static IP"
+        default "192.168.1.50"
+        depends on HB_WIFI_STA_STATIC_IP
+
+    config HB_WIFI_STA_NETMASK
+        string "Station netmask"
+        default "255.255.255.0"
+        depends on HB_WIFI_STA_STATIC_IP
+
+    config HB_WIFI_STA_GATEWAY
+        string "Station gateway"
+        default "192.168.1.1"
+        depends on HB_WIFI_STA_STATIC_IP
+```
+
+In `esp32s3/README.md`, replace the "WiFi station" row of the "Reaching the ESP" table with:
+```
+| WiFi station | the static IP set in menuconfig (default 192.168.1.50), or hoverboard.local |
+```
+
+- [ ] **Step 2: Implement WiFi start**
 
 `main/net_wifi.h`:
 ```cpp
@@ -1644,6 +1840,7 @@ git commit -m "add: hoverboard_bridge package with UDP protocol and bench probe"
 #include "esp_err.h"
 
 // Starts WiFi in the Kconfig-selected mode (station or access point) and mDNS.
+// In station mode the IP is static (HB_WIFI_STA_STATIC_IP) or assigned by DHCP.
 esp_err_t wifi_start();
 ```
 
@@ -1662,6 +1859,25 @@ esp_err_t wifi_start();
 #include "sdkconfig.h"
 
 static const char* TAG = "wifi";
+
+#ifdef CONFIG_HB_WIFI_STA_STATIC_IP
+// Replaces the DHCP client with the Kconfig address. No DNS server is set: the bridge never resolves names.
+static esp_err_t setStaticIp(esp_netif_t* sta)
+{
+    esp_netif_ip_info_t info = {};
+    if (esp_netif_str_to_ip4(CONFIG_HB_WIFI_STA_IP, &info.ip) != ESP_OK ||
+        esp_netif_str_to_ip4(CONFIG_HB_WIFI_STA_NETMASK, &info.netmask) != ESP_OK ||
+        esp_netif_str_to_ip4(CONFIG_HB_WIFI_STA_GATEWAY, &info.gw) != ESP_OK) {
+        ESP_LOGE(TAG, "Invalid static IP settings in menuconfig");
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = esp_netif_dhcpc_stop(sta);
+    if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+        return err;
+    }
+    return esp_netif_set_ip_info(sta, &info);
+}
+#endif
 
 static void onWifiEvent(void*, esp_event_base_t base, int32_t id, void* data)
 {
@@ -1686,7 +1902,10 @@ esp_err_t wifi_start()
     }
 
 #ifdef CONFIG_HB_WIFI_MODE_STA
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t* sta = esp_netif_create_default_wifi_sta();
+#ifdef CONFIG_HB_WIFI_STA_STATIC_IP
+    ESP_RETURN_ON_ERROR(setStaticIp(sta), TAG, "static IP");
+#endif
 #else
     esp_netif_t* ap = esp_netif_create_default_wifi_ap();  // 192.168.4.1 with DHCP server
     uint8_t offer = 0;                                       // Do not offer a default route or DNS
@@ -1727,7 +1946,7 @@ esp_err_t wifi_start()
 }
 ```
 
-- [ ] **Step 2: Call it from main**
+- [ ] **Step 3: Call it from main**
 
 Replace `main/main.cpp` with:
 ```cpp
@@ -1772,29 +1991,28 @@ idf_component_register(
     REQUIRES hover_core esp_wifi esp_netif esp_event nvs_flash)
 ```
 
-- [ ] **Step 3: Build**
+- [ ] **Step 4: Build**
 
 Run: `idf.py build`
 Expected: build succeeds.
 
-- [ ] **Step 4: Hardware check (needs the ESP32-S3; ask the user before flashing)**
+Run: `idf.py menuconfig`
+Expected: with WiFi mode = Station, the four static IP options appear; with Access point, they are hidden.
+
+- [ ] **Step 5: Hardware check (needs the ESP32-S3; ask the user before flashing)**
 
 AP mode (default): `idf.py -p <PORT> flash monitor`. Connect the PC to SSID `hoverboard-robot`, then run `ping 192.168.4.1`.
 Expected: the monitor shows `WiFi started`, ping replies arrive.
 
-STA mode: in `idf.py menuconfig` select Station, set SSID and password, flash again, then run `ping hoverboard.local`.
-Expected: the monitor shows `Station IP ...`, ping replies arrive.
+STA mode: in `idf.py menuconfig` select Station, set SSID and password, and set the static IP, netmask and gateway for the router network (check the subnet with `ip -br addr` on the host). Flash again, then run `ping <HB_WIFI_STA_IP>` from the host and `tools/docker-humble/run.sh ping -c 3 <HB_WIFI_STA_IP>` from the container.
+Expected: the monitor shows `Station IP <HB_WIFI_STA_IP>`, ping replies arrive from both. `ping hoverboard.local` from the host also replies.
 
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add esp32s3/main
-git commit -m "add: WiFi station/access point networking for hoverboard_ros"
-```
+Repeat once with `Station: use a static IP` off.
+Expected: `Station IP` shows a router-assigned address and ping to it replies.
 
 ---
 
-### Task 7: ESP networking – USB tethering (CDC-NCM)
+### Task 8: ESP networking – USB tethering (CDC-NCM)
 
 **Files:**
 - Create: `esp32s3/main/net_usb.h`
@@ -1803,7 +2021,7 @@ git commit -m "add: WiFi station/access point networking for hoverboard_ros"
 - Modify: `esp32s3/main/CMakeLists.txt`
 
 **Interfaces:**
-- Consumes: `CONFIG_HB_USB_NET` (Task 1); `esp_netif_init()` and the default event loop already done in `app_main` (Task 6).
+- Consumes: `CONFIG_HB_USB_NET` (Task 1); `esp_netif_init()` and the default event loop already done in `app_main` (Task 7).
 - Produces: `esp_err_t usb_net_start();`. It creates a lwIP interface at `192.168.7.1/24` with a DHCP server that offers no router.
 
 Reference implementations to cross-check if the `esp_tinyusb` 1.x API differs in the resolved version: `esp-idf/examples/peripherals/usb/device/tusb_ncm` and `github.com/esp32-open-source/usb-netif-example`.
@@ -1924,24 +2142,17 @@ Expected: build succeeds. If `tinyusb_net.h` is not found, run `idf.py menuconfi
 
 - [ ] **Step 4: Hardware check (needs the ESP32-S3; ask the user before flashing)**
 
-Flash through the "UART" port: `idf.py -p <PORT> flash monitor`. Then connect the PC to the native "USB" port.
+Put the board in download mode (hold BOOT, press and release RESET, release BOOT), run `idf.py -p /dev/ttyACM0 flash`, then press RESET. The same USB-C port now enumerates as a network device; no monitor is available on it.
 
-On Ubuntu: `ip -br addr` and `ip route`.
+Run: `ip -br addr` and `ip route`.
 Expected: a new interface (`usb0` or `enx0248420007xx`) with `192.168.7.2/24`, and no `default via 192.168.7.1` route.
 
 Run: `ping 192.168.7.1`
-Expected: replies. On Windows 11 the same works: `ipconfig` shows 192.168.7.2.
-
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add esp32s3/main
-git commit -m "add: USB CDC-NCM tethering for hoverboard_ros"
-```
+Expected: replies.
 
 ---
 
-### Task 8: ESP bridge loop (UDP ↔ hoverboard, IMU, LIDAR, logs)
+### Task 9: ESP bridge loop (UDP ↔ hoverboard, IMU, LIDAR, logs)
 
 **Files:**
 - Create: `esp32s3/main/uart_port.h`
@@ -1956,7 +2167,7 @@ git commit -m "add: USB CDC-NCM tethering for hoverboard_ros"
 - Modify: `esp32s3/main/CMakeLists.txt` (final version)
 
 **Interfaces:**
-- Consumes: `hover::*` (Task 2), `proto::*`, `util::CmdWatchdog`, `util::LidarChunker`, `util::LidarStarter` (Task 3), `wt901::Parser` (Task 4), `wifi_start()` (Task 6), `usb_net_start()` (Task 7).
+- Consumes: `hover::*` (Task 2), `proto::*`, `util::CmdWatchdog`, `util::LidarChunker`, `util::LidarStarter` (Task 3), `wt901::Parser` (Task 4), `wifi_start()` (Task 7), `usb_net_start()` (Task 8).
 - Produces:
   - `class UartPort { esp_err_t open(uart_port_t port, int rx_gpio, int tx_gpio, int baud, size_t rx_buffer); size_t read(uint8_t* buf, size_t max); void write(const uint8_t* data, size_t len); bool isOpen() const; }`
   - `class UdpLink { bool open(uint16_t port); size_t poll(uint8_t* buf, size_t cap); void commitPeer(); void send(const uint8_t* data, size_t len); bool hasPeer() const; }`
@@ -2549,23 +2760,16 @@ Expected: wheels stop within about 0.3 s. A new probe with `--duration 1` shows 
 Repeat the first probe command with `--host 192.168.4.1` (PC joined to the ESP access point).
 Expected: same telemetry over WiFi.
 
-- [ ] **Step 8: Commit (ask the user first)**
-
-```bash
-git add esp32s3/main
-git commit -m "add: hoverboard_ros UDP bridge loop"
-```
-
 ---
 
-### Task 9: IMU and LIDAR bring-up on the ESP
+### Task 10: IMU and LIDAR bring-up on the ESP
 
 **Files:**
 - Modify: `ros2/hoverboard_bridge/hoverboard_bridge/link_probe.py`
 - Modify: `esp32s3/README.md`
 
 **Interfaces:**
-- Consumes: `IMU` and `LIDAR_RX` datagrams from Task 8; `MSG_LIDAR_TX` and `encode` from Task 5.
+- Consumes: `IMU` and `LIDAR_RX` datagrams from Task 9; `MSG_LIDAR_TX` and `encode` from Task 6.
 - Produces: `link_probe` options `--lidar-hex "<hex bytes>"` (sent once to the LIDAR, for extra commands on top of the start the ESP already sends) and a hex dump of the first 64 received LIDAR bytes.
 
 - [ ] **Step 1: Extend the probe for LIDAR identification**
@@ -2648,16 +2852,9 @@ Append to `esp32s3/README.md`:
   `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --lidar-hex "54 A2 04 D8 09 00 00 16"`.
 ````
 
-- [ ] **Step 6: Commit (ask the user first)**
-
-```bash
-git add ros2/hoverboard_bridge esp32s3/README.md
-git commit -m "add: IMU and LIDAR bring-up support in link_probe"
-```
-
 ---
 
-### Task 10: PC kinematics and IMU conversion
+### Task 11: PC kinematics and IMU conversion
 
 **Files:**
 - Create: `ros2/hoverboard_bridge/hoverboard_bridge/kinematics.py`
@@ -2737,7 +2934,7 @@ def test_yaw_quaternion():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run (from `ros2/hoverboard_bridge`): `python3 -m pytest test/test_kinematics.py test/test_imu_convert.py -q`
+Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_kinematics.py test/test_imu_convert.py -q`
 Expected: FAIL with `ModuleNotFoundError` for `hoverboard_bridge.kinematics`.
 
 - [ ] **Step 3: Implement**
@@ -2837,19 +3034,12 @@ def euler_to_quaternion(roll, pitch, yaw):
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m pytest test -q`
+Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: all tests pass (`9 passed`).
-
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add ros2/hoverboard_bridge
-git commit -m "add: diff-drive kinematics and WT901 conversion for hoverboard_bridge"
-```
 
 ---
 
-### Task 11: LIDAR pseudo terminal
+### Task 12: LIDAR pseudo terminal
 
 **Files:**
 - Create: `ros2/hoverboard_bridge/hoverboard_bridge/lidar_pty.py`
@@ -2893,7 +3083,7 @@ def test_bytes_flow_both_ways(tmp_path):
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run (Ubuntu, from `ros2/hoverboard_bridge`): `python3 -m pytest test/test_lidar_pty.py -q`
+Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_lidar_pty.py -q`
 Expected: FAIL with `ModuleNotFoundError` for `hoverboard_bridge.lidar_pty`.
 
 - [ ] **Step 3: Implement**
@@ -2943,19 +3133,12 @@ The slave file descriptor stays open for the whole lifetime of the object. Other
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python3 -m pytest test/test_lidar_pty.py -q`
+Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_lidar_pty.py -q`
 Expected: `1 passed`
-
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add ros2/hoverboard_bridge
-git commit -m "add: LIDAR pseudo terminal for hoverboard_bridge"
-```
 
 ---
 
-### Task 12: ROS2 bridge node, parameters and launch file
+### Task 13: ROS2 bridge node, parameters and launch file
 
 **Files:**
 - Create: `ros2/hoverboard_bridge/hoverboard_bridge/bridge_node.py`
@@ -2963,7 +3146,7 @@ git commit -m "add: LIDAR pseudo terminal for hoverboard_bridge"
 - Create: `ros2/hoverboard_bridge/launch/bridge.launch.py`
 
 **Interfaces:**
-- Consumes: `link_protocol` (Task 5), `kinematics`, `imu_convert` (Task 10), `LidarPty` (Task 11).
+- Consumes: `link_protocol` (Task 6), `kinematics`, `imu_convert` (Task 11), `LidarPty` (Task 12).
 - Produces, ROS interfaces of node `hoverboard_bridge`:
   - Subscribes `cmd_vel` (`geometry_msgs/Twist`)
   - Publishes `odom` (`nav_msgs/Odometry`), TF `odom -> base_link`, `joint_states` (`sensor_msgs/JointState`, joints `left_wheel_joint`, `right_wheel_joint`), `imu/data` (`sensor_msgs/Imu`), `hoverboard/battery` (`sensor_msgs/BatteryState`), `hoverboard/temperature` (`sensor_msgs/Temperature`)
@@ -3257,10 +3440,10 @@ if __name__ == '__main__':
 ```yaml
 hoverboard_bridge:
   ros__parameters:
-    esp_host: "192.168.7.1"        # USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA hoverboard.local
+    esp_host: "192.168.7.1"        # USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA static IP (192.168.1.50)
     esp_port: 8888
-    wheel_radius: 0.0825           # [m] measure and refine in Task 13
-    wheel_separation: 0.40         # [m] measure and refine in Task 13
+    wheel_radius: 0.0825           # [m] measure and refine in Task 14
+    wheel_separation: 0.40         # [m] measure and refine in Task 14
     ticks_per_rev: 90
     n_mot_max: 200.0               # [rpm] must match N_MOT_MAX in firmware config.h
     max_cmd: 1000
@@ -3294,7 +3477,7 @@ def generate_launch_description():
     params = os.path.join(get_package_share_directory('hoverboard_bridge'), 'config', 'bridge.yaml')
     return LaunchDescription([
         DeclareLaunchArgument('esp_host', default_value='192.168.7.1',
-                              description='USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA hoverboard.local'),
+                              description='USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA static IP (192.168.1.50)'),
         Node(
             package='hoverboard_bridge',
             executable='bridge_node',
@@ -3307,37 +3490,28 @@ def generate_launch_description():
 
 - [ ] **Step 3: Build the workspace**
 
-Run (Ubuntu 22.04 with ROS2 Humble sourced):
+Run (container, from `/ws`):
 ```bash
-mkdir -p ~/ros2_ws/src
-ln -s <repo>/ros2/hoverboard_bridge ~/ros2_ws/src/hoverboard_bridge
-cd ~/ros2_ws
 colcon build --symlink-install --packages-select hoverboard_bridge
 source install/setup.bash
 ```
+New container shells source `/ws/install/setup.bash` automatically.
 Expected: `Finished <<< hoverboard_bridge`.
 
 - [ ] **Step 4: Run without hardware**
 
-Run: `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=127.0.0.1`
+Run (container): `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=127.0.0.1`
 Expected: logs `LIDAR stream at /tmp/ttyLIDAR` and `Bridging to ESP at 127.0.0.1`, with no exceptions.
 
-In a second terminal: `ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.2}}"` for a few seconds, then `ros2 node info /hoverboard_bridge`.
+In a second container shell (`tools/docker-humble/run.sh`): `ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.2}}"` for a few seconds, then `ros2 node info /hoverboard_bridge`.
 Expected: the node lists the subscriber and publishers from the Interfaces block; no errors in the first terminal. Stop with Ctrl+C: clean exit, and `/tmp/ttyLIDAR` is removed.
 
-Run: `python3 -m pytest test -q` (from `ros2/hoverboard_bridge`)
+Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: all tests pass.
-
-- [ ] **Step 5: Commit (ask the user first)**
-
-```bash
-git add ros2/hoverboard_bridge
-git commit -m "add: hoverboard_bridge ROS2 node and launch file"
-```
 
 ---
 
-### Task 13: Robot bring-up and calibration
+### Task 14: Robot bring-up and calibration
 
 **Files:**
 - Modify: `ros2/hoverboard_bridge/config/bridge.yaml` (calibrated values)
@@ -3348,10 +3522,10 @@ git commit -m "add: hoverboard_bridge ROS2 node and launch file"
 
 - [ ] **Step 1: Link check over each medium (wheels lifted)**
 
-With USB tethering: `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=192.168.7.1`
+With USB tethering (container): `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=192.168.7.1`
 Expected: `ESP telemetry received`, `Hoverboard feedback OK`. `ros2 topic echo --once /hoverboard/battery` shows the pack voltage.
 
-Repeat with the PC on the ESP access point (`esp_host:=192.168.4.1`) and, after reflashing in station mode, with `esp_host:=hoverboard.local`.
+Repeat with the PC on the ESP access point (`esp_host:=192.168.4.1`) and, after reflashing in station mode, with `esp_host:=<HB_WIFI_STA_IP>`.
 Expected: same result on all three.
 
 - [ ] **Step 2: Command signs (wheels lifted)**
@@ -3366,7 +3540,7 @@ Expected: both `velocity` values positive and both `position` values increasing.
 
 - [ ] **Step 4: Ticks per revolution (stop the ROS node first)**
 
-Run: `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --left 100 --right 100 --duration 10`
+Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --left 100 --right 100 --duration 10`
 Expected: the final lines print `ticks_per_rev~N` for both wheels. Set `ticks_per_rev` to the nearest integer (90 is expected for 15 pole-pair hub motors).
 
 - [ ] **Step 5: Wheel radius and separation (robot on the floor)**
@@ -3381,10 +3555,10 @@ Relaunch and repeat both once. Expected: odom within about 5% of the real distan
 
 - [ ] **Step 6: LIDAR driver hookup**
 
-Precondition: Task 9 saw LDROBOT frames (`54 2c`).
+Precondition: Task 10 saw LDROBOT frames (`54 2c`).
 
-1. Build `ldlidar_stl_ros2` (https://github.com/ldrobotSensorTeam/ldlidar_stl_ros2) in the same workspace.
-2. Launch it with `port_name` set to `/tmp/ttyLIDAR` and `port_baudrate` set to `230400`, while `bridge.launch.py` is running. The driver never sends a start command of its own, which is why the ESP does it; the driver only has to parse the stream.
+1. `ldlidar_stl_ros2` is already built in the container image (underlay `/opt/ldlidar_ws`, Task 5).
+2. In a second container shell, launch it with `port_name` set to `/tmp/ttyLIDAR` and `port_baudrate` set to `230400`, while `bridge.launch.py` is running. The driver never sends a start command of its own, which is why the ESP does it; the driver only has to parse the stream.
 3. Run `ros2 topic hz /scan`. Expected: a steady rate around 7 Hz, the measured rotation speed of this unit.
 
 - [ ] **Step 7: Document ROS2 usage**
@@ -3398,14 +3572,8 @@ ros2 launch hoverboard_bridge bridge.launch.py esp_host:=192.168.7.1
 Topics: `/cmd_vel` (in), `/odom`, `/tf`, `/joint_states`, `/imu/data`, `/hoverboard/battery`, `/hoverboard/temperature` (out).
 LIDAR raw stream for serial drivers: `/tmp/ttyLIDAR`.
 Calibrated parameters live in `ros2/hoverboard_bridge/config/bridge.yaml`.
+ROS2 runs in the Humble container: `tools/docker-humble/run.sh` (see `tools/docker-humble/README.md`).
 ````
-
-- [ ] **Step 8: Commit (ask the user first)**
-
-```bash
-git add ros2/hoverboard_bridge/config/bridge.yaml esp32s3/README.md
-git commit -m "update: calibrated hoverboard_bridge parameters and ROS2 usage notes"
-```
 
 ## Future Work (out of scope)
 
