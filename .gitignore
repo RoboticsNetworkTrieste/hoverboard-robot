@@ -8,3 +8,5 @@ esp32s3/managed_components/
 esp32s3/dependencies.lock
 esp32s3/sdkconfig
 esp32s3/sdkconfig.old
+.pytest_cache/
+*.egg-info/

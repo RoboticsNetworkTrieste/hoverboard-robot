@@ -1280,7 +1280,7 @@ Expected: build succeeds (hover_core compiles for the ESP32-S3 too).
   - ROS2, the underlay and (when built) the `/ws/install` overlay sourced in every shell and command
   - X11 forwarding for `rviz2`
 
-- [ ] **Step 1: Write the container files**
+- [x] **Step 1: Write the container files**
 
 `tools/docker-humble/Dockerfile`:
 ```dockerfile
@@ -1290,7 +1290,7 @@ FROM osrf/ros:humble-desktop
 ARG USERNAME=ros
 ARG USER_UID=1000
 ARG USER_GID=1000
-ARG LDLIDAR_REF=master
+ARG LDLIDAR_REF=bf668a8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git python3-pytest python3-colcon-common-extensions iproute2 iputils-ping \
@@ -1415,12 +1415,12 @@ Append to `.gitignore`:
 
 Run: `chmod +x tools/docker-humble/run.sh`
 
-- [ ] **Step 2: Build the image**
+- [x] **Step 2: Build the image**
 
 Run (host, from the repo root): `tools/docker-humble/run.sh --build ros2 pkg prefix ldlidar_stl_ros2`
 Expected: the image builds and the command prints `/opt/ldlidar_ws/install/ldlidar_stl_ros2`. If `ldlidar_stl_ros2` fails to compile on Humble, stop and report the error; do not patch the driver.
 
-- [ ] **Step 3: Check the environment**
+- [x] **Step 3: Check the environment**
 
 Run: `tools/docker-humble/run.sh bash -c 'echo $ROS_DISTRO; python3 --version; python3 -m pytest --version; id -u'`
 Expected: `humble`, `Python 3.10.x`, a pytest version, and the same number as `id -u` on the host.
@@ -1431,13 +1431,13 @@ Expected: the file is owned by the host UID and GID.
 Run: `tools/docker-humble/run.sh ip -br addr`
 Expected: the same interfaces as `ip -br addr` on the host.
 
-- [ ] **Step 4: Check DDS between two containers**
+- [x] **Step 4: Check DDS between two containers**
 
 Run in one terminal: `tools/docker-humble/run.sh ros2 run demo_nodes_cpp talker`
 Run in a second terminal: `tools/docker-humble/run.sh ros2 topic echo --once /chatter`
 Expected: the second terminal prints one `Hello World: N` message and exits. Stop the talker with Ctrl+C.
 
-- [ ] **Step 5: Check the GUI (optional, needs a desktop session)**
+- [x] **Step 5: Check the GUI (optional, needs a desktop session)**
 
 Run: `xhost +local:` then `tools/docker-humble/run.sh rviz2`
 Expected: the RViz window opens. Close it.

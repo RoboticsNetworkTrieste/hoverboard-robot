@@ -1,0 +1,27 @@
+# ROS2 Humble container for the hoverboard_bridge workspace. Start it with run.sh.
+services:
+  humble:
+    build:
+      context: .
+      args:
+        USER_UID: ${HOST_UID:-1000}
+        USER_GID: ${HOST_GID:-1000}
+    image: hoverboard-robot/humble
+    network_mode: host   # same interfaces as the host: WiFi and USB tethering to the ESP
+    ipc: host            # DDS shared memory works between containers on the host network
+    environment:
+      - DISPLAY=${DISPLAY:-}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    volumes:
+      - ../../ros2:/ws/src
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ws_build:/ws/build
+      - ws_install:/ws/install
+      - ws_log:/ws/log
+    stdin_open: true
+    tty: true
+
+volumes:
+  ws_build:
+  ws_install:
+  ws_log:
