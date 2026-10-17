@@ -1468,7 +1468,7 @@ Expected: the RViz window opens. Close it.
   - `parse_imu(body: bytes) -> ImuState | None`
 - Produces: console script `link_probe`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `ros2/hoverboard_bridge/test/test_link_protocol.py`:
 ```python
@@ -1497,14 +1497,14 @@ def test_short_inputs_are_rejected():
     assert lp.parse_imu(b'\x00' * 10) is None
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_link_protocol.py -q`
 Expected: FAIL with `ModuleNotFoundError` / `ImportError` for `hoverboard_bridge.link_protocol`.
 
-- [ ] **Step 3: Write the package files**
+- [x] **Step 3: Write the package files**
 
-`ros2/hoverboard_bridge/package.xml` (maintainer email: use the value of `git config user.email`):
+`ros2/hoverboard_bridge/package.xml`:
 ```xml
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
@@ -1512,7 +1512,8 @@ Expected: FAIL with `ModuleNotFoundError` / `ImportError` for `hoverboard_bridge
   <name>hoverboard_bridge</name>
   <version>0.1.0</version>
   <description>UDP bridge between the hoverboard ESP32-S3 firmware and ROS2</description>
-  <maintainer email="maintainer@example.com">Lorenzo D'Auria</maintainer>
+  <maintainer email="lorenzodauria97@gmail.com">Lorenzo D'Auria</maintainer>
+  <author email="lorenzodauria97@gmail.com">Lorenzo D'Auria</author>
   <license>GPL-3.0-only</license>
 
   <exec_depend>rclpy</exec_depend>
@@ -1551,8 +1552,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
+    author="Lorenzo D'Auria",
+    author_email='lorenzodauria97@gmail.com',
     maintainer="Lorenzo D'Auria",
-    maintainer_email='maintainer@example.com',
+    maintainer_email='lorenzodauria97@gmail.com',
     description='UDP bridge between the hoverboard ESP32-S3 firmware and ROS2',
     license='GPL-3.0-only',
     tests_require=['pytest'],
@@ -1575,7 +1578,7 @@ install_scripts=$base/lib/hoverboard_bridge
 
 Create the empty files `resource/hoverboard_bridge` and `hoverboard_bridge/__init__.py`.
 
-- [ ] **Step 4: Implement the protocol module**
+- [x] **Step 4: Implement the protocol module**
 
 `ros2/hoverboard_bridge/hoverboard_bridge/link_protocol.py`:
 ```python
@@ -1658,12 +1661,12 @@ def parse_imu(body):
     return ImuState(values[0:3], values[3:6], values[6:9])
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_link_protocol.py -q`
 Expected: `3 passed`
 
-- [ ] **Step 6: Write the bench probe**
+- [x] **Step 6: Write the bench probe**
 
 It runs without ROS: `python3 -m hoverboard_bridge.link_probe` from `ros2/hoverboard_bridge`, with the host Python or in the container.
 
@@ -1775,7 +1778,7 @@ if __name__ == '__main__':
     main()
 ```
 
-- [ ] **Step 7: Smoke test the probe without hardware**
+- [x] **Step 7: Smoke test the probe without hardware**
 
 Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 127.0.0.1 --duration 1`
 Expected: prints `no telemetry` about 5 times and exits with code 0.
