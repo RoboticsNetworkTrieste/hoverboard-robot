@@ -38,6 +38,23 @@ git submodule update --init      # first time only
 ```
 Output: `hoverboard-firmware-hack-FOC/.pio/build/VARIANT_USART/firmware.bin`.
 
+Note: the PlatformIO VS Code extension reacts to `platformio.ini` changes. When `build.sh` reverts
+the patch, the extension wipes `.pio/build/` and recreates the first env (`VARIANT_ADC`), deleting
+the `VARIANT_USART` firmware. Prefer `./build.sh -t upload`, or close VS Code before a build-only run.
+
+## Browsing the patched code in VS Code
+To read or edit the code with the patch applied, without building:
+```
+git -C hoverboard-firmware-hack-FOC apply ../config.patch     # apply the patch
+```
+VS Code and the PlatformIO extension now see `VARIANT_USART` and our `config.h` settings.
+`build.sh` refuses to run while the patch is applied; build from the PlatformIO extension or with
+`pio run` inside the submodule instead. When done, save any edits into `config.patch` (see
+[Changing the configuration](#changing-the-configuration)), then restore the submodule:
+```
+git -C hoverboard-firmware-hack-FOC checkout .                # restore the submodule
+```
+
 ## Changing the configuration
 Apply the patch by hand, edit, then save the new diff and clean the submodule:
 ```
