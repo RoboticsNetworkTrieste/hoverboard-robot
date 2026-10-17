@@ -1,0 +1,10 @@
+build/
+.venv/
+__pycache__/
+.vscode/
+
+# ESP-IDF project
+esp32s3/managed_components/
+esp32s3/dependencies.lock
+esp32s3/sdkconfig
+esp32s3/sdkconfig.old

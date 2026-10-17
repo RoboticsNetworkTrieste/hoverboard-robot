@@ -2,7 +2,7 @@
 
 ## Project description
 
-This project has been forked from a well known repository [hoverboard-firmware-hack-FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC).
+The hoverboard mainboard runs [hoverboard-firmware-hack-FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC), included as a submodule in `hoverboard/` and configured through `hoverboard/config.patch`.
 The goal of this project is to create a simple and cheap mobile robot platform compatible with ROS2 based on Hoverboard hardware.
 
 ## Agents guidelines

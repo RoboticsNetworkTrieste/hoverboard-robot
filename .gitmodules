@@ -1,0 +1,3 @@
+[submodule "hoverboard/hoverboard-firmware-hack-FOC"]
+	path = hoverboard/hoverboard-firmware-hack-FOC
+	url = https://github.com/EFeru/hoverboard-firmware-hack-FOC.git

@@ -8,7 +8,7 @@
 // voltage, board temperature, good/bad packet counters).
 // Keep the wheels lifted off the ground during the first tests.
 //
-// Firmware side (platformio.ino, config.h):
+// Firmware side (hoverboard/config.patch):
 //   VARIANT_USART, CONTROL_SERIAL_USART3, FEEDBACK_SERIAL_USART3,
 //   TANK_STEERING, ENABLE_ODOMETRY, CTRL_MOD_REQ SPD_MODE
 //
