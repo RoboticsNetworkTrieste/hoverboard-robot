@@ -20,7 +20,7 @@ Findings from bench tests of the "STL-50B2" 360° DTOF LIDAR bought on AliExpres
 |---|---|
 | Baud rate | **230400** |
 | Format | 8 data bits, no parity, 1 stop bit, no flow control |
-| Logic level | 3.3 V TTL (LDROBOT family standard; the CH340 adapter was fine) |
+| Logic level | 5 V according to the manufacturer sheet, **not measured yet**. On the robot the UART goes through a 5 V / 3.3 V level shifter |
 | Direction | Bidirectional (the LIDAR needs commands on its RX pin) |
 
 ## 3. Behaviour at power-on
@@ -220,6 +220,7 @@ The plot has 0° at the top and angles increasing clockwise, which is the LDROBO
 
 ## 10. Open questions
 
+- UART logic level: measure the TX idle voltage (expected 5 V).
 - Pinout of the 5-pin connector, in particular the TIME synchronization pin: direction, signal type (pulse per revolution? PPS input?) and voltage level.
 - Whether `0xA2` (set speed) works and which speed range is accepted.
 - Meaning of the idle `54 A1 xx xx` status packet.

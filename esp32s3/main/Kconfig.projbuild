@@ -37,7 +37,7 @@ menu "Hoverboard ROS bridge"
 
     config HB_USB_NET
         bool "Enable USB tethering (CDC-NCM network, ESP at 192.168.7.1)"
-        default y
+        default n
 
     config HB_UDP_PORT
         int "UDP port"

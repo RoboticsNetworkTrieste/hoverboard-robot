@@ -37,8 +37,8 @@ def print_ticks_per_rev(first, last, elapsed, rpm_sum, rpm_count):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', default='192.168.7.1',
-                        help='ESP address: USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA its static IP')
+    parser.add_argument('--host', default='192.168.1.50',
+                        help='ESP address: WiFi STA static IP (192.168.1.50), WiFi AP 192.168.4.1, USB 192.168.7.1')
     parser.add_argument('--port', type=int, default=8888)
     parser.add_argument('--left', type=int, default=0, help='Left wheel command (-1000..1000)')
     parser.add_argument('--right', type=int, default=0, help='Right wheel command (-1000..1000)')

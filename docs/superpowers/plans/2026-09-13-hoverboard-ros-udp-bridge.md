@@ -22,7 +22,7 @@ USB tethering requires the ESP32-S3 to act as a USB network card (CDC-NCM). The 
 |---|---|---|---|
 | WiFi station | `HB_WIFI_MODE_STA` + `HB_WIFI_SSID`/`HB_WIFI_PASSWORD` | Static `HB_WIFI_STA_IP` (default `192.168.1.50`), or DHCP from the router if `HB_WIFI_STA_STATIC_IP` is off | the static IP; `hoverboard.local` (mDNS) also works from the host |
 | WiFi access point | `HB_WIFI_MODE_AP` + `HB_WIFI_SSID`/`HB_WIFI_PASSWORD` | `192.168.4.1` (DHCP server) | `192.168.4.1` |
-| USB tethering (CDC-NCM) | `HB_USB_NET=y` | `192.168.7.1` (DHCP server gives the PC `192.168.7.2`, no default route) | `192.168.7.1` |
+| USB tethering (CDC-NCM, optional) | `HB_USB_NET=y` | `192.168.7.1` (DHCP server gives the PC `192.168.7.2`, no default route) | `192.168.7.1` |
 
 WiFi (in one of its modes) and USB can be enabled together. The UDP socket listens on `0.0.0.0:HB_UDP_PORT` (default 8888). Telemetry goes to the last sender of a valid `CMD_WHEELS` message.
 
@@ -31,16 +31,52 @@ WiFi (in one of its modes) and USB can be enabled together. The UDP socket liste
 |---|---|---|---|
 | UART1 | Hoverboard (right sensor cable, USART3) | RX=GPIO4, TX=GPIO5 | 115200 |
 | UART2 | LIDAR STL-50B2 | RX=GPIO7, TX=GPIO8 | 230400 (confirmed on the bench, see `docs/lidar/STL-50B2.md`) |
-| UART0 | WT901C IMU (only IMU TX wired) | RX=GPIO6 | 9600 (WT901C default) |
+| UART0 | WT901C IMU | RX=GPIO6, TX=GPIO9 | 9600 (WT901C default) |
 
 ### Board and power
 The board is a Waveshare ESP32-S3-Zero. Only its edge pins are used: 5V, GND, 3V3, GPIO1-13 and GPIO43/44 (TX/RX). GPIO14-18 and GPIO38-45 are solder pads on the top and bottom faces and are not used. GPIO21 drives the on-board RGB LED.
 
-A 5V DC-DC converter fed by the hoverboard battery powers the ESP (5V pin) and the LIDAR. The WT901C IMU is powered from the ESP 3V3 pin.
+Power and wiring are described in "Electrical wiring" below.
 
 The board has a single USB-C port, wired to the native USB. When the firmware enables USB tethering, that port becomes a CDC-NCM network device and no serial port or console is available on it. Flashing then needs download mode: hold BOOT, press and release RESET, release BOOT.
 
 Using UART0 for the IMU requires the ESP-IDF console to be disabled (`CONFIG_ESP_CONSOLE_NONE`). ESP logs are always forwarded as `LOG` datagrams, so they appear in the PC tools anyway.
+
+### Electrical wiring
+The hoverboard keeps its original mainboard, motor controllers, hall sensors and motors. Everything added for the robot runs from one 5V rail:
+
+```
+Hoverboard battery
+  -> original mainboard
+       -> 12V output (the line that used to feed a Bluetooth speaker, 12V measured)
+            -> DSN-mini-360 step-down (MP2307, 1.8A), output trimmed to 5.0V
+                 -> ESP32-S3-Zero 5V pin
+                 -> LIDAR STL-50B2 5V
+                 -> WT901C VCC
+                 -> level shifter HV
+ESP32-S3-Zero 3V3 pin -> level shifter LV
+All grounds are common: mainboard, step-down output, ESP, level shifter, LIDAR, IMU.
+```
+
+Expected load on the 5V rail is about 1A at most (ESP with WiFi up to ~0.5A peaks, LIDAR motor start-up, IMU), so about 0.5A on the 12V line. The speaker that line used to supply drew more.
+
+The ESP32-S3 GPIOs are not 5V tolerant. The LIDAR and the IMU run at 5V, so their UART lines go through a 4-channel MH level converter, all four channels used, (BSS138 MOSFETs with 10k pull-ups on both sides, https://wiki.liutyi.info/display/ARDUINO/MH+Level+Converter). The hoverboard UART is 3.3V (STM32F103; USART3 pins PB10/PB11 are also 5V tolerant) and is wired directly.
+
+| Signal | Direction | Level | Path |
+|---|---|---|---|
+| Hoverboard TX -> GPIO4 (UART1 RX) | mainboard -> ESP | 3.3V | direct |
+| GPIO5 (UART1 TX) -> Hoverboard RX | ESP -> mainboard | 3.3V | direct |
+| LIDAR TX -> GPIO7 (UART2 RX) | LIDAR -> ESP | 5V (to verify) | shifter HV1 -> LV1 |
+| GPIO8 (UART2 TX) -> LIDAR RX | ESP -> LIDAR | 3.3V -> 5V | shifter LV2 -> HV2 |
+| WT901C TX -> GPIO6 (UART0 RX) | IMU -> ESP | 5V (to verify) | shifter HV3 -> LV3 |
+| GPIO9 (UART0 TX) -> WT901C RX | ESP -> IMU | 3.3V -> 5V | shifter LV4 -> HV4 |
+
+Rules:
+- Trim the DSN-mini-360 output to 5.0V with a multimeter before connecting any load; the module does not ship set to 5V.
+- The 5V UART levels of the LIDAR and the IMU come from the manufacturer sheets and are not measured yet. Measure each TX pin at idle (an idle UART line sits high) and write the result here. A 3.3V reading is still safe through the shifter.
+- Never connect the red 15V wire of the hoverboard sensor cable.
+- The IMU RX line is wired but the firmware sends nothing on it yet; it idles high, so the WT901C ignores it. It is there for future configuration commands (calibration, output rate, baud).
+- WiFi is the normal link. Before plugging the USB-C cable (flashing, USB tethering), disconnect the step-down output from the ESP 5V pin, otherwise the 5V rail can feed back into the PC USB port. LIDAR, IMU and the shifter HV side can stay on the step-down; grounds stay common.
 
 ### LIDAR start-up
 The STL-50B2 belongs to the LDROBOT family: it stays silent until it receives a start
@@ -103,6 +139,15 @@ ESP wheel values are raw from the firmware: `ticks_*` are the unwrapped `wheel*_
 - WiFi credentials live only in the local `sdkconfig`, which is git-ignored. `sdkconfig.defaults` must not contain real credentials.
 - Tests are intentionally minimal (golden vectors and a few behaviours). Every test step must actually be run; report failures plainly rather than claiming tests pass.
 
+### USB tethering compatibility
+USB tethering (Task 8) is deferred, not dropped. Until it is implemented, no change may make it harder to add:
+- The firmware stays transport-agnostic. The UDP socket binds `0.0.0.0` and telemetry goes to the last sender of a valid `CMD_WHEELS`. Outside `net_wifi.cpp`, no code refers to the WiFi interface (no binding to a netif, no WiFi-only checks before sending).
+- `app_main` initialises NVS, `esp_netif` and the default event loop before starting any network, so `usb_net_start()` can be added next to `wifi_start()`.
+- The native USB port (GPIO19/20) is reserved for flashing and CDC-NCM. Do not use it as a log channel or for other USB classes, and do not use GPIO19/20 as GPIOs. ESP logs travel as `LOG` datagrams.
+- Keep the `HB_USB_NET` menuconfig option, the `espressif/esp_tinyusb` 1.x dependency and `CONFIG_TINYUSB_NET_MODE_NCM` in `sdkconfig.defaults`.
+- `192.168.7.0/24` is reserved for USB. The ESP access point and the station network must use other subnets.
+- On the PC, the ESP address is a plain parameter (`esp_host`, `--host`); no WiFi-only discovery.
+
 ### Where each step runs
 
 | Where | Toolchain | Used by |
@@ -129,7 +174,7 @@ esp32s3/                 ESP-IDF project (ESP32-S3 firmware)
     Kconfig.projbuild                 "Hoverboard ROS bridge" menuconfig menu
     main.cpp                          app_main: init NVS/netif, start networks, run bridge
     net_wifi.h / net_wifi.cpp         WiFi STA (static IP or DHCP) or AP + mDNS
-    net_usb.h / net_usb.cpp           USB CDC-NCM network interface with DHCP server
+    net_usb.h / net_usb.cpp           USB CDC-NCM network interface with DHCP server (Task 8, deferred)
     udp_link.h / udp_link.cpp         Non-blocking UDP socket, peer tracking
     uart_port.h / uart_port.cpp       Thin non-blocking UART wrapper
     log_forward.h / log_forward.cpp   Captures ESP log lines for LOG datagrams
@@ -180,7 +225,7 @@ ros2/hoverboard_bridge/               ROS2 Humble ament_python package
     test_lidar_pty.py                 Linux only
 ```
 
-Execution order note: Tasks 1–6 and 11–13 need no hardware. Tasks 7–10 can be written and compiled now; their hardware verification steps wait for the ESP32-S3. Task 15 needs the full robot.
+Execution order note: Tasks 1–6 and 11–13 need no hardware. Tasks 7, 9 and 10 can be written and compiled now; their hardware verification steps wait for the ESP32-S3. Task 14 needs the full robot. Task 8 (USB tethering) is deferred until Task 14 passes over WiFi.
 
 ---
 
@@ -293,7 +338,7 @@ menu "Hoverboard ROS bridge"
 
     config HB_USB_NET
         bool "Enable USB tethering (CDC-NCM network, ESP at 192.168.7.1)"
-        default y
+        default n
 
     config HB_UDP_PORT
         int "UDP port"
@@ -429,7 +474,8 @@ idf.py build
 
 ## Flash
 The board is a Waveshare ESP32-S3-Zero: it has a single USB-C port, wired to the native USB.
-Once the firmware runs, that port is a USB network device (CDC-NCM), not a serial port.
+With USB tethering enabled, that port is a USB network device (CDC-NCM), not a serial port.
+Before plugging the USB-C cable, disconnect the step-down output from the ESP 5V pin.
 To flash, enter download mode: hold BOOT, press and release RESET, release BOOT.
 The board then shows up as a serial port again.
 ```
@@ -448,16 +494,21 @@ UDP port: 8888. Quick test without ROS, from any machine with Python 3 on the ro
 `python3 -m hoverboard_bridge.link_probe --host <ESP address>` (run from `ros2/hoverboard_bridge`).
 
 ## Wiring
+Power: mainboard 12V output -> DSN-mini-360 step-down trimmed to 5.0V -> ESP 5V pin, LIDAR,
+WT901C and level shifter HV. The level shifter LV side runs from the ESP 3V3 pin. All grounds are common.
+
 | Device | Device pin | ESP32-S3 |
 |---|---|---|
-| Hoverboard right sensor cable (USART3) | GND / TX / RX | GND / GPIO4 / GPIO5. NEVER connect the red 15V wire |
-| WT901C | VCC / TX / GND (RX unconnected) | 3V3 / GPIO6 / GND |
-| LIDAR | 5V / GND / TX / RX | 5V from DC-DC / GND / GPIO7 / GPIO8 |
-| 5V DC-DC (fed by the hoverboard) | 5V / GND | 5V / GND |
+| Hoverboard right sensor cable (USART3, 3.3V) | GND / TX / RX | GND / GPIO4 / GPIO5 direct. NEVER connect the red 15V wire |
+| WT901C (5V) | VCC / TX / RX / GND | 5V rail / shifter HV3-LV3 -> GPIO6 / GPIO9 -> shifter LV4-HV4 / GND |
+| LIDAR (5V) | 5V / GND / TX / RX | 5V rail / GND / shifter HV1-LV1 -> GPIO7 / GPIO8 -> shifter LV2-HV2 |
+| MH level converter | HV / LV / GND | 5V rail / 3V3 / GND |
+| DSN-mini-360 step-down | OUT+ / OUT- | 5V / GND |
 
 Only the edge pins of the ESP32-S3-Zero are used (5V, GND, 3V3, GPIO1-13, GPIO43/44);
 the pads on the top and bottom faces are left unsoldered.
-The ESP 5V pin and the LIDAR share the DC-DC output. The IMU runs from the ESP 3V3 pin.
+The ESP GPIOs are not 5V tolerant: LIDAR and IMU UART lines always go through the shifter.
+Before plugging the USB-C cable, disconnect the step-down output from the ESP 5V pin.
 ````
 
 - [x] **Step 7: Build**
@@ -1711,8 +1762,8 @@ def print_ticks_per_rev(first, last, elapsed, rpm_sum, rpm_count):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', default='192.168.7.1',
-                        help='ESP address: USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA its static IP')
+    parser.add_argument('--host', default='192.168.1.50',
+                        help='ESP address: WiFi STA static IP (192.168.1.50), WiFi AP 192.168.4.1, USB 192.168.7.1')
     parser.add_argument('--port', type=int, default=8888)
     parser.add_argument('--left', type=int, default=0, help='Left wheel command (-1000..1000)')
     parser.add_argument('--right', type=int, default=0, help='Right wheel command (-1000..1000)')
@@ -2015,143 +2066,9 @@ Expected: `Station IP` shows a router-assigned address and ping to it replies.
 
 ---
 
-### Task 8: ESP networking – USB tethering (CDC-NCM)
+### Task 8 (deferred): USB tethering
 
-**Files:**
-- Create: `esp32s3/main/net_usb.h`
-- Create: `esp32s3/main/net_usb.cpp`
-- Modify: `esp32s3/main/main.cpp`
-- Modify: `esp32s3/main/CMakeLists.txt`
-
-**Interfaces:**
-- Consumes: `CONFIG_HB_USB_NET` (Task 1); `esp_netif_init()` and the default event loop already done in `app_main` (Task 7).
-- Produces: `esp_err_t usb_net_start();`. It creates a lwIP interface at `192.168.7.1/24` with a DHCP server that offers no router.
-
-Reference implementations to cross-check if the `esp_tinyusb` 1.x API differs in the resolved version: `esp-idf/examples/peripherals/usb/device/tusb_ncm` and `github.com/esp32-open-source/usb-netif-example`.
-
-- [ ] **Step 1: Implement the USB network interface**
-
-`main/net_usb.h`:
-```cpp
-#pragma once
-
-#include "esp_err.h"
-
-// Starts TinyUSB CDC-NCM and a lwIP interface at 192.168.7.1 with a DHCP server.
-esp_err_t usb_net_start();
-```
-
-`main/net_usb.cpp`:
-```cpp
-#include "net_usb.h"
-
-#include <cstdlib>
-#include <cstring>
-
-#include "esp_check.h"
-#include "esp_log.h"
-#include "esp_netif.h"
-#include "freertos/FreeRTOS.h"
-#include "tinyusb.h"
-#include "tinyusb_net.h"
-
-static const char* TAG = "usb_net";
-
-static const uint8_t kHostSideMac[6] = {0x02, 0x48, 0x42, 0x00, 0x07, 0x02};  // Seen by the PC
-static const uint8_t kEspSideMac[6] = {0x02, 0x48, 0x42, 0x00, 0x07, 0x01};   // lwIP interface
-
-static esp_netif_t* s_netif = nullptr;
-
-static esp_err_t netifTransmit(void*, void* buffer, size_t len)
-{
-    return tinyusb_net_send_sync(buffer, (uint16_t)len, nullptr, pdMS_TO_TICKS(100));
-}
-
-static void netifFreeRx(void*, void* buffer)
-{
-    free(buffer);
-}
-
-// USB frames are copied because TinyUSB reuses its buffer after the callback.
-static esp_err_t usbReceive(void* buffer, uint16_t len, void*)
-{
-    if (s_netif == nullptr) return ESP_OK;
-    void* copy = malloc(len);
-    if (copy == nullptr) return ESP_ERR_NO_MEM;
-    std::memcpy(copy, buffer, len);
-    return esp_netif_receive(s_netif, copy, len, copy);
-}
-
-esp_err_t usb_net_start()
-{
-    esp_netif_ip_info_t ip = {};
-    ip.ip.addr = ESP_IP4TOADDR(192, 168, 7, 1);
-    ip.netmask.addr = ESP_IP4TOADDR(255, 255, 255, 0);
-    ip.gw.addr = 0;
-
-    esp_netif_inherent_config_t base = {};
-    base.flags = (esp_netif_flags_t)(ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_AUTOUP);
-    std::memcpy(base.mac, kEspSideMac, sizeof(kEspSideMac));
-    base.ip_info = &ip;
-    base.if_key = "USB_NCM";
-    base.if_desc = "usb ncm";
-    base.route_prio = 10;
-
-    esp_netif_driver_ifconfig_t driver = {};
-    driver.handle = (void*)1;  // Non-null handle required by esp_netif
-    driver.transmit = netifTransmit;
-    driver.driver_free_rx_buffer = netifFreeRx;
-
-    esp_netif_config_t cfg = {};
-    cfg.base = &base;
-    cfg.driver = &driver;
-    cfg.stack = ESP_NETIF_NETSTACK_DEFAULT_ETH;
-
-    s_netif = esp_netif_new(&cfg);
-    ESP_RETURN_ON_FALSE(s_netif != nullptr, ESP_FAIL, TAG, "esp_netif_new");
-
-    uint8_t offer = 0;  // Do not offer a default route or DNS: the PC keeps its internet route
-    esp_netif_dhcps_option(s_netif, ESP_NETIF_OP_SET, ESP_NETIF_ROUTER_SOLICITATION_ADDRESS, &offer, sizeof(offer));
-    esp_netif_action_start(s_netif, nullptr, 0, nullptr);
-
-    const tinyusb_config_t tusb_cfg = {};  // Default descriptors from Kconfig (NCM enabled)
-    ESP_RETURN_ON_ERROR(tinyusb_driver_install(&tusb_cfg), TAG, "tinyusb_driver_install");
-
-    tinyusb_net_config_t net_cfg = {};
-    std::memcpy(net_cfg.mac_addr, kHostSideMac, sizeof(kHostSideMac));
-    net_cfg.on_recv_callback = usbReceive;
-    ESP_RETURN_ON_ERROR(tinyusb_net_init(TINYUSB_USBDEV_0, &net_cfg), TAG, "tinyusb_net_init");
-
-    ESP_LOGI(TAG, "USB tethering at 192.168.7.1");
-    return ESP_OK;
-}
-```
-
-- [ ] **Step 2: Call it from main**
-
-In `main/main.cpp` add `#include "net_usb.h"` next to `#include "net_wifi.h"`, and add before the `#ifndef CONFIG_HB_WIFI_MODE_OFF` block:
-```cpp
-#ifdef CONFIG_HB_USB_NET
-    ESP_ERROR_CHECK(usb_net_start());
-#endif
-```
-
-In `main/CMakeLists.txt` change `SRCS` to `"main.cpp" "net_wifi.cpp" "net_usb.cpp"`.
-
-- [ ] **Step 3: Build**
-
-Run: `idf.py build`
-Expected: build succeeds. If `tinyusb_net.h` is not found, run `idf.py menuconfig` and check that Component config > TinyUSB Stack > Network driver is NCM, then build again.
-
-- [ ] **Step 4: Hardware check (needs the ESP32-S3; ask the user before flashing)**
-
-Put the board in download mode (hold BOOT, press and release RESET, release BOOT), run `idf.py -p /dev/ttyACM0 flash`, then press RESET. The same USB-C port now enumerates as a network device; no monitor is available on it.
-
-Run: `ip -br addr` and `ip route`.
-Expected: a new interface (`usb0` or `enx0248420007xx`) with `192.168.7.2/24`, and no `default via 192.168.7.1` route.
-
-Run: `ping 192.168.7.1`
-Expected: replies.
+Moved to "Deferred: USB tethering" at the end of the plan. It is implemented only after Task 14 passes over WiFi. Until then, follow "USB tethering compatibility" in Global Constraints.
 
 ---
 
@@ -2168,14 +2085,28 @@ Expected: replies.
 - Create: `esp32s3/main/bridge.cpp`
 - Modify: `esp32s3/main/main.cpp` (final version)
 - Modify: `esp32s3/main/CMakeLists.txt` (final version)
+- Modify: `esp32s3/main/Kconfig.projbuild` (add `HB_IMU_TX_GPIO`)
 
 **Interfaces:**
-- Consumes: `hover::*` (Task 2), `proto::*`, `util::CmdWatchdog`, `util::LidarChunker`, `util::LidarStarter` (Task 3), `wt901::Parser` (Task 4), `wifi_start()` (Task 7), `usb_net_start()` (Task 8).
+- Consumes: `hover::*` (Task 2), `proto::*`, `util::CmdWatchdog`, `util::LidarChunker`, `util::LidarStarter` (Task 3), `wt901::Parser` (Task 4), `wifi_start()` (Task 7).
 - Produces:
   - `class UartPort { esp_err_t open(uart_port_t port, int rx_gpio, int tx_gpio, int baud, size_t rx_buffer); size_t read(uint8_t* buf, size_t max); void write(const uint8_t* data, size_t len); bool isOpen() const; }`
   - `class UdpLink { bool open(uint16_t port); size_t poll(uint8_t* buf, size_t cap); void commitPeer(); void send(const uint8_t* data, size_t len); bool hasPeer() const; }`
   - `void log_forward_install(); size_t log_forward_read(char* buf, size_t cap); constexpr size_t kLogLineMax = 128;`
   - `void bridge_run();` (never returns)
+
+- [ ] **Step 0: IMU TX pin option**
+
+In `main/Kconfig.projbuild`, insert after the `HB_IMU_RX_GPIO` entry:
+```
+    config HB_IMU_TX_GPIO
+        int "IMU UART TX GPIO"
+        default 9
+        depends on HB_ENABLE_IMU
+        help
+            Wired to the WT901C RX through the level shifter. Nothing is sent yet;
+            the line idles high.
+```
 
 - [ ] **Step 1: UART wrapper**
 
@@ -2504,7 +2435,7 @@ void Bridge::openPorts()
     udp_.open(CONFIG_HB_UDP_PORT);
     hoverUart_.open(UART_NUM_1, CONFIG_HB_HOVER_RX_GPIO, CONFIG_HB_HOVER_TX_GPIO, CONFIG_HB_HOVER_BAUD, 1024);
 #ifdef CONFIG_HB_ENABLE_IMU
-    imuUart_.open(UART_NUM_0, CONFIG_HB_IMU_RX_GPIO, UART_PIN_NO_CHANGE, CONFIG_HB_IMU_BAUD, 512);
+    imuUart_.open(UART_NUM_0, CONFIG_HB_IMU_RX_GPIO, CONFIG_HB_IMU_TX_GPIO, CONFIG_HB_IMU_BAUD, 512);
 #endif
 #ifdef CONFIG_HB_ENABLE_LIDAR
     lidarUart_.open(UART_NUM_2, CONFIG_HB_LIDAR_RX_GPIO, CONFIG_HB_LIDAR_TX_GPIO, CONFIG_HB_LIDAR_BAUD, 4096);
@@ -2698,7 +2629,6 @@ Replace `main/main.cpp` with:
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "log_forward.h"
-#include "net_usb.h"
 #include "net_wifi.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
@@ -2722,9 +2652,6 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-#ifdef CONFIG_HB_USB_NET
-    ESP_ERROR_CHECK(usb_net_start());
-#endif
 #ifndef CONFIG_HB_WIFI_MODE_OFF
     ESP_ERROR_CHECK(wifi_start());
 #endif
@@ -2737,7 +2664,7 @@ extern "C" void app_main(void)
 Replace `main/CMakeLists.txt` with:
 ```cmake
 idf_component_register(
-    SRCS "main.cpp" "net_wifi.cpp" "net_usb.cpp" "udp_link.cpp" "uart_port.cpp" "log_forward.cpp" "bridge.cpp"
+    SRCS "main.cpp" "net_wifi.cpp" "udp_link.cpp" "uart_port.cpp" "log_forward.cpp" "bridge.cpp"
     INCLUDE_DIRS "."
     REQUIRES hover_core esp_wifi esp_netif esp_event nvs_flash esp_driver_uart esp_timer lwip)
 ```
@@ -2749,19 +2676,21 @@ Expected: build succeeds with no warnings from `main/`.
 
 - [ ] **Step 7: Hardware check with the hoverboard (ask the user before flashing; wheels lifted)**
 
-Flash, wire the hoverboard (see README) and connect USB tethering.
+In `idf.py menuconfig`, Hoverboard ROS bridge: WiFi mode = Station with SSID, password and static IP for the robot network (as in Task 7), USB tethering = no. The PC joins the same network.
 
-Run (from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --duration 5`
-Expected: `[esp] ... Telemetry peer 192.168.7.2:...` log line, then status lines with `HOVER_OK`, a plausible battery voltage and `bad` not increasing.
+Flash, unplug the USB-C cable, then wire the hoverboard (see "Electrical wiring") and power the ESP from the step-down.
 
-Run: `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --left 50 --right 50 --duration 5`
+Run (from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --duration 5`
+Expected: `[esp] ... Telemetry peer <PC IP>:...` log line, then status lines with `HOVER_OK`, a plausible battery voltage and `bad` not increasing.
+
+Run: `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --left 50 --right 50 --duration 5`
 Expected: both wheels spin, `rpm` values are non-zero, and wheels stop after the probe ends.
 
 Watchdog: start the same command and kill the probe with Ctrl+C mid-run.
 Expected: wheels stop within about 0.3 s. A new probe with `--duration 1` shows `CMD_TIMEOUT` on its first status line.
 
-Repeat the first probe command with `--host 192.168.4.1` (PC joined to the ESP access point).
-Expected: same telemetry over WiFi.
+Optional: reflash with WiFi mode = Access point and repeat the first probe command with `--host 192.168.4.1` (PC joined to the ESP access point).
+Expected: same telemetry.
 
 ---
 
@@ -2825,22 +2754,25 @@ Expected: exits with code 0 and prints `no telemetry`.
 In `idf.py menuconfig`:
 - Hoverboard ROS bridge > Enable WT901C IMU on UART0: yes
 - Component config > ESP System Settings > Channel for console output: None
+- WiFi in station mode, USB tethering off (as in Task 9 Step 7)
 
-Wire WT901C VCC to 3V3 and TX to GPIO6, then build and flash.
+Build and flash, then unplug the USB-C cable before powering the ESP from the step-down.
 
-Run: `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --duration 10`
+Wire the WT901C as in "Electrical wiring": VCC to the 5V rail, TX through shifter HV3 -> LV3 to GPIO6, GPIO9 through shifter LV4 -> HV4 to RX. Before connecting the shifter, measure the WT901C TX idle voltage and record it in "Electrical wiring".
+
+Run: `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --duration 10`
 Expected: status lines contain `IMU_OK`, and `imu angle=(...)` changes when the IMU is tilted.
 
 - [ ] **Step 4: LIDAR hardware check**
 
-Wire the LIDAR (5V from the DC-DC converter, TX to GPIO7, RX to GPIO8).
+Wire the LIDAR as in "Electrical wiring": 5V rail, TX through shifter HV1 -> LV1 to GPIO7, GPIO8 through shifter LV2 -> HV2 to RX. Before connecting the shifter, measure the LIDAR TX idle voltage and record it in "Electrical wiring".
 
 The ESP sends the start command by itself, so nothing has to be typed to make the LIDAR spin.
 
-Run: `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --duration 5`
+Run: `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --duration 5`
 Expected: the motor spins up within a second of the ESP booting, `[lidar] 54 2c ...` appears (the LDROBOT data header) and the `lidar=` counter grows at roughly 17 kB/s. The first bytes of the dump also show the command echo `54 a0 04 00 00 00 00 5e` and the health packet `54 1f 00 00 00 41`, whose last-but-one byte is the error mode: `00` means normal.
 
-If the line stays silent, check in this order: TX and RX not swapped, ground shared with the ESP, LIDAR on a 5V rail that can supply the motor, `HB_LIDAR_AUTOSTART` enabled in menuconfig. The baud is known to be 230400 and the protocol is documented in `docs/lidar/STL-50B2.md`: do not go hunting for either.
+If the line stays silent, check in this order: TX and RX not swapped, ground shared with the ESP, shifter powered (HV 5V, LV 3.3V), each signal on the matching HV/LV channel pair, LIDAR on a 5V rail that can supply the motor, `HB_LIDAR_AUTOSTART` enabled in menuconfig. The baud is known to be 230400 and the protocol is documented in `docs/lidar/STL-50B2.md`: do not go hunting for either.
 
 - [ ] **Step 5: Document findings**
 
@@ -2852,7 +2784,7 @@ Append to `esp32s3/README.md`:
   boot and resends it while the line is silent, so the sensor spins with no action from the PC.
   Protocol notes: `docs/lidar/STL-50B2.md`.
   To send an extra command by hand, for example set the speed to 7 Hz:
-  `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --lidar-hex "54 A2 04 D8 09 00 00 16"`.
+  `python3 -m hoverboard_bridge.link_probe --host <ESP address> --lidar-hex "54 A2 04 D8 09 00 00 16"`.
 ````
 
 ---
@@ -3195,7 +3127,7 @@ class BridgeNode(Node):
     def __init__(self):
         super().__init__('hoverboard_bridge')
         defaults = {
-            'esp_host': '192.168.7.1',
+            'esp_host': '192.168.1.50',
             'esp_port': 8888,
             'wheel_radius': 0.0825,
             'wheel_separation': 0.40,
@@ -3443,7 +3375,7 @@ if __name__ == '__main__':
 ```yaml
 hoverboard_bridge:
   ros__parameters:
-    esp_host: "192.168.7.1"        # USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA static IP (192.168.1.50)
+    esp_host: "192.168.1.50"       # WiFi STA static IP (192.168.1.50), WiFi AP 192.168.4.1, USB 192.168.7.1
     esp_port: 8888
     wheel_radius: 0.0825           # [m] measure and refine in Task 14
     wheel_separation: 0.40         # [m] measure and refine in Task 14
@@ -3479,8 +3411,8 @@ from launch_ros.actions import Node
 def generate_launch_description():
     params = os.path.join(get_package_share_directory('hoverboard_bridge'), 'config', 'bridge.yaml')
     return LaunchDescription([
-        DeclareLaunchArgument('esp_host', default_value='192.168.7.1',
-                              description='USB 192.168.7.1, WiFi AP 192.168.4.1, WiFi STA static IP (192.168.1.50)'),
+        DeclareLaunchArgument('esp_host', default_value='192.168.1.50',
+                              description='WiFi STA static IP (192.168.1.50), WiFi AP 192.168.4.1, USB 192.168.7.1'),
         Node(
             package='hoverboard_bridge',
             executable='bridge_node',
@@ -3523,13 +3455,13 @@ Expected: all tests pass.
 **Interfaces:**
 - Consumes: everything above, with the full robot assembled.
 
-- [ ] **Step 1: Link check over each medium (wheels lifted)**
+- [ ] **Step 1: Link check over WiFi (wheels lifted)**
 
-With USB tethering (container): `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=192.168.7.1`
+ESP in station mode (container): `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=<HB_WIFI_STA_IP>`
 Expected: `ESP telemetry received`, `Hoverboard feedback OK`. `ros2 topic echo --once /hoverboard/battery` shows the pack voltage.
 
-Repeat with the PC on the ESP access point (`esp_host:=192.168.4.1`) and, after reflashing in station mode, with `esp_host:=<HB_WIFI_STA_IP>`.
-Expected: same result on all three.
+Optional: after reflashing in access point mode, repeat with the PC on the ESP access point (`esp_host:=192.168.4.1`). USB tethering is not tested; if it is ever used, disconnect the step-down from the ESP 5V pin before plugging the cable.
+Expected: same result.
 
 - [ ] **Step 2: Command signs (wheels lifted)**
 
@@ -3543,7 +3475,7 @@ Expected: both `velocity` values positive and both `position` values increasing.
 
 - [ ] **Step 4: Ticks per revolution (stop the ROS node first)**
 
-Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --left 100 --right 100 --duration 10`
+Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --left 100 --right 100 --duration 10`
 Expected: the final lines print `ticks_per_rev~N` for both wheels. Set `ticks_per_rev` to the nearest integer (90 is expected for 15 pole-pair hub motors).
 
 - [ ] **Step 5: Wheel radius and separation (robot on the floor)**
@@ -3570,13 +3502,162 @@ Append to `esp32s3/README.md`:
 ````markdown
 ## ROS2 (Humble)
 ```
-ros2 launch hoverboard_bridge bridge.launch.py esp_host:=192.168.7.1
+ros2 launch hoverboard_bridge bridge.launch.py esp_host:=<ESP address>
 ```
 Topics: `/cmd_vel` (in), `/odom`, `/tf`, `/joint_states`, `/imu/data`, `/hoverboard/battery`, `/hoverboard/temperature` (out).
 LIDAR raw stream for serial drivers: `/tmp/ttyLIDAR`.
 Calibrated parameters live in `ros2/hoverboard_bridge/config/bridge.yaml`.
 ROS2 runs in the Humble container: `tools/docker-humble/run.sh` (see `tools/docker-humble/README.md`).
 ````
+
+---
+
+## Deferred: USB tethering
+
+### Task 8 (deferred): ESP networking – USB tethering (CDC-NCM)
+
+Start only after Task 14 passes over WiFi. Task 9 builds `main.cpp` and `CMakeLists.txt` without USB networking; this task adds it on top. Before plugging the USB-C cable, disconnect the step-down from the ESP 5V pin (see "Electrical wiring").
+
+**Files:**
+- Create: `esp32s3/main/net_usb.h`
+- Create: `esp32s3/main/net_usb.cpp`
+- Modify: `esp32s3/main/main.cpp`
+- Modify: `esp32s3/main/CMakeLists.txt`
+
+**Interfaces:**
+- Consumes: `CONFIG_HB_USB_NET` (Task 1); `esp_netif_init()` and the default event loop already done in `app_main` (Task 7).
+- Produces: `esp_err_t usb_net_start();`. It creates a lwIP interface at `192.168.7.1/24` with a DHCP server that offers no router.
+
+Reference implementations to cross-check if the `esp_tinyusb` 1.x API differs in the resolved version: `esp-idf/examples/peripherals/usb/device/tusb_ncm` and `github.com/esp32-open-source/usb-netif-example`.
+
+- [ ] **Step 1: Implement the USB network interface**
+
+`main/net_usb.h`:
+```cpp
+#pragma once
+
+#include "esp_err.h"
+
+// Starts TinyUSB CDC-NCM and a lwIP interface at 192.168.7.1 with a DHCP server.
+esp_err_t usb_net_start();
+```
+
+`main/net_usb.cpp`:
+```cpp
+#include "net_usb.h"
+
+#include <cstdlib>
+#include <cstring>
+
+#include "esp_check.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+#include "freertos/FreeRTOS.h"
+#include "tinyusb.h"
+#include "tinyusb_net.h"
+
+static const char* TAG = "usb_net";
+
+static const uint8_t kHostSideMac[6] = {0x02, 0x48, 0x42, 0x00, 0x07, 0x02};  // Seen by the PC
+static const uint8_t kEspSideMac[6] = {0x02, 0x48, 0x42, 0x00, 0x07, 0x01};   // lwIP interface
+
+static esp_netif_t* s_netif = nullptr;
+
+static esp_err_t netifTransmit(void*, void* buffer, size_t len)
+{
+    return tinyusb_net_send_sync(buffer, (uint16_t)len, nullptr, pdMS_TO_TICKS(100));
+}
+
+static void netifFreeRx(void*, void* buffer)
+{
+    free(buffer);
+}
+
+// USB frames are copied because TinyUSB reuses its buffer after the callback.
+static esp_err_t usbReceive(void* buffer, uint16_t len, void*)
+{
+    if (s_netif == nullptr) return ESP_OK;
+    void* copy = malloc(len);
+    if (copy == nullptr) return ESP_ERR_NO_MEM;
+    std::memcpy(copy, buffer, len);
+    return esp_netif_receive(s_netif, copy, len, copy);
+}
+
+esp_err_t usb_net_start()
+{
+    esp_netif_ip_info_t ip = {};
+    ip.ip.addr = ESP_IP4TOADDR(192, 168, 7, 1);
+    ip.netmask.addr = ESP_IP4TOADDR(255, 255, 255, 0);
+    ip.gw.addr = 0;
+
+    esp_netif_inherent_config_t base = {};
+    base.flags = (esp_netif_flags_t)(ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_AUTOUP);
+    std::memcpy(base.mac, kEspSideMac, sizeof(kEspSideMac));
+    base.ip_info = &ip;
+    base.if_key = "USB_NCM";
+    base.if_desc = "usb ncm";
+    base.route_prio = 10;
+
+    esp_netif_driver_ifconfig_t driver = {};
+    driver.handle = (void*)1;  // Non-null handle required by esp_netif
+    driver.transmit = netifTransmit;
+    driver.driver_free_rx_buffer = netifFreeRx;
+
+    esp_netif_config_t cfg = {};
+    cfg.base = &base;
+    cfg.driver = &driver;
+    cfg.stack = ESP_NETIF_NETSTACK_DEFAULT_ETH;
+
+    s_netif = esp_netif_new(&cfg);
+    ESP_RETURN_ON_FALSE(s_netif != nullptr, ESP_FAIL, TAG, "esp_netif_new");
+
+    uint8_t offer = 0;  // Do not offer a default route or DNS: the PC keeps its internet route
+    esp_netif_dhcps_option(s_netif, ESP_NETIF_OP_SET, ESP_NETIF_ROUTER_SOLICITATION_ADDRESS, &offer, sizeof(offer));
+    esp_netif_action_start(s_netif, nullptr, 0, nullptr);
+
+    const tinyusb_config_t tusb_cfg = {};  // Default descriptors from Kconfig (NCM enabled)
+    ESP_RETURN_ON_ERROR(tinyusb_driver_install(&tusb_cfg), TAG, "tinyusb_driver_install");
+
+    tinyusb_net_config_t net_cfg = {};
+    std::memcpy(net_cfg.mac_addr, kHostSideMac, sizeof(kHostSideMac));
+    net_cfg.on_recv_callback = usbReceive;
+    ESP_RETURN_ON_ERROR(tinyusb_net_init(TINYUSB_USBDEV_0, &net_cfg), TAG, "tinyusb_net_init");
+
+    ESP_LOGI(TAG, "USB tethering at 192.168.7.1");
+    return ESP_OK;
+}
+```
+
+- [ ] **Step 2: Call it from main**
+
+In `main/main.cpp` (final version from Task 9) add `#include "net_usb.h"` next to `#include "net_wifi.h"`, and add before the `#ifndef CONFIG_HB_WIFI_MODE_OFF` block:
+```cpp
+#ifdef CONFIG_HB_USB_NET
+    ESP_ERROR_CHECK(usb_net_start());
+#endif
+```
+
+In `main/CMakeLists.txt` add `"net_usb.cpp"` to `SRCS`.
+
+- [ ] **Step 3: Build**
+
+Run: `idf.py build`
+Expected: build succeeds. If `tinyusb_net.h` is not found, run `idf.py menuconfig` and check that Component config > TinyUSB Stack > Network driver is NCM, then build again.
+
+- [ ] **Step 4: Hardware check (needs the ESP32-S3; ask the user before flashing)**
+
+In `idf.py menuconfig` enable Hoverboard ROS bridge > Enable USB tethering (off by default). Disconnect the step-down from the ESP 5V pin, then put the board in download mode (hold BOOT, press and release RESET, release BOOT), run `idf.py -p /dev/ttyACM0 flash`, then press RESET. The same USB-C port now enumerates as a network device; no monitor is available on it.
+
+Run: `ip -br addr` and `ip route`.
+Expected: a new interface (`usb0` or `enx0248420007xx`) with `192.168.7.2/24`, and no `default via 192.168.7.1` route.
+
+Run: `ping 192.168.7.1`
+Expected: replies.
+
+Run (from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 192.168.7.1 --duration 5`
+Expected: the same telemetry as over WiFi in Task 9 Step 7, with `Telemetry peer 192.168.7.2:...`. With WiFi still enabled, a probe on `<HB_WIFI_STA_IP>` also works.
+
+---
 
 ## Future Work (out of scope)
 

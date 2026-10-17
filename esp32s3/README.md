@@ -14,7 +14,8 @@ idf.py build
 
 ## Flash
 The board is a Waveshare ESP32-S3-Zero: it has a single USB-C port, wired to the native USB.
-Once the firmware runs, that port is a USB network device (CDC-NCM), not a serial port.
+With USB tethering enabled, that port is a USB network device (CDC-NCM), not a serial port.
+Before plugging the USB-C cable, disconnect the step-down output from the ESP 5V pin.
 To flash, enter download mode: hold BOOT, press and release RESET, release BOOT.
 The board then shows up as a serial port again.
 ```
@@ -33,13 +34,18 @@ UDP port: 8888. Quick test without ROS, from any machine with Python 3 on the ro
 `python3 -m hoverboard_bridge.link_probe --host <ESP address>` (run from `ros2/hoverboard_bridge`).
 
 ## Wiring
+Power: mainboard 12V output -> DSN-mini-360 step-down trimmed to 5.0V -> ESP 5V pin, LIDAR,
+WT901C and level shifter HV. The level shifter LV side runs from the ESP 3V3 pin. All grounds are common.
+
 | Device | Device pin | ESP32-S3 |
 |---|---|---|
-| Hoverboard right sensor cable (USART3) | GND / TX / RX | GND / GPIO4 / GPIO5. NEVER connect the red 15V wire |
-| WT901C | VCC / TX / GND (RX unconnected) | 3V3 / GPIO6 / GND |
-| LIDAR | 5V / GND / TX / RX | 5V from DC-DC / GND / GPIO7 / GPIO8 |
-| 5V DC-DC (fed by the hoverboard) | 5V / GND | 5V / GND |
+| Hoverboard right sensor cable (USART3, 3.3V) | GND / TX / RX | GND / GPIO4 / GPIO5 direct. NEVER connect the red 15V wire |
+| WT901C (5V) | VCC / TX / RX / GND | 5V rail / shifter HV3-LV3 -> GPIO6 / GPIO9 -> shifter LV4-HV4 / GND |
+| LIDAR (5V) | 5V / GND / TX / RX | 5V rail / GND / shifter HV1-LV1 -> GPIO7 / GPIO8 -> shifter LV2-HV2 |
+| MH level converter | HV / LV / GND | 5V rail / 3V3 / GND |
+| DSN-mini-360 step-down | OUT+ / OUT- | 5V / GND |
 
 Only the edge pins of the ESP32-S3-Zero are used (5V, GND, 3V3, GPIO1-13, GPIO43/44);
 the pads on the top and bottom faces are left unsoldered.
-The ESP 5V pin and the LIDAR share the DC-DC output. The IMU runs from the ESP 3V3 pin.
+The ESP GPIOs are not 5V tolerant: LIDAR and IMU UART lines always go through the shifter.
+Before plugging the USB-C cable, disconnect the step-down output from the ESP 5V pin.
