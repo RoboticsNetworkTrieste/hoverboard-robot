@@ -15,7 +15,7 @@
 ## Design Summary
 
 ### Why ESP-IDF and not Arduino
-USB tethering requires the ESP32-S3 to act as a USB network card (CDC-NCM). The Arduino ESP32 core only provides CDC serial, HID and MSC USB classes. NCM networking is available only through ESP-IDF's `esp_tinyusb` component (`tinyusb_net_*` API). The existing Arduino sketch `Arduino/hoverboard_test` stays as the UART bench tool.
+USB tethering requires the ESP32-S3 to act as a USB network card (CDC-NCM). The Arduino ESP32 core only provides CDC serial, HID and MSC USB classes. NCM networking is available only through ESP-IDF's `esp_tinyusb` component (`tinyusb_net_*` API). The existing Arduino sketch `tools/arduino_hoverboard_test` stays as the UART bench tool.
 
 ### Transports (all carry the same UDP datagrams)
 | Medium | Kconfig | ESP IP | PC reaches ESP at |
@@ -117,7 +117,7 @@ The Windows machine has no C++ compiler and no ROS2 installation, and none is pl
 ## File Structure
 
 ```
-esp32/hoverboard_ros/                 ESP-IDF project (ESP32-S3 firmware)
+esp32s3/                 ESP-IDF project (ESP32-S3 firmware)
   CMakeLists.txt                      Project definition
   sdkconfig.defaults                  Target, TinyUSB NCM, FreeRTOS tick, stack sizes
   README.md                           Build, configure, flash, wiring
@@ -177,14 +177,14 @@ Execution order note: Tasks 1–5 and 10–12 need no hardware. Tasks 6–9 can 
 ### Task 1: ESP-IDF project skeleton and configuration menu
 
 **Files:**
-- Create: `esp32/hoverboard_ros/CMakeLists.txt`
-- Create: `esp32/hoverboard_ros/sdkconfig.defaults`
-- Create: `esp32/hoverboard_ros/main/CMakeLists.txt`
-- Create: `esp32/hoverboard_ros/main/idf_component.yml`
-- Create: `esp32/hoverboard_ros/main/Kconfig.projbuild`
-- Create: `esp32/hoverboard_ros/main/main.cpp`
-- Create: `esp32/hoverboard_ros/components/hover_core/CMakeLists.txt`
-- Create: `esp32/hoverboard_ros/README.md`
+- Create: `esp32s3/CMakeLists.txt`
+- Create: `esp32s3/sdkconfig.defaults`
+- Create: `esp32s3/main/CMakeLists.txt`
+- Create: `esp32s3/main/idf_component.yml`
+- Create: `esp32s3/main/Kconfig.projbuild`
+- Create: `esp32s3/main/main.cpp`
+- Create: `esp32s3/components/hover_core/CMakeLists.txt`
+- Create: `esp32s3/README.md`
 - Modify: `.gitignore` (append ESP-IDF build outputs and local sdkconfig)
 
 **Interfaces:**
@@ -199,14 +199,14 @@ Expected: `ESP-IDF v5.4.x`
 
 - [x] **Step 2: Create the project files**
 
-`esp32/hoverboard_ros/CMakeLists.txt`:
+`esp32s3/CMakeLists.txt`:
 ```cmake
 cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(hoverboard_ros)
 ```
 
-`esp32/hoverboard_ros/sdkconfig.defaults`:
+`esp32s3/sdkconfig.defaults`:
 ```
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_FREERTOS_HZ=1000
@@ -216,7 +216,7 @@ CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
 CONFIG_COMPILER_CXX_EXCEPTIONS=n
 ```
 
-`esp32/hoverboard_ros/main/CMakeLists.txt` (Task 1 version, extended in Tasks 6–8):
+`esp32s3/main/CMakeLists.txt` (Task 1 version, extended in Tasks 6–8):
 ```cmake
 idf_component_register(
     SRCS "main.cpp"
@@ -224,7 +224,7 @@ idf_component_register(
     REQUIRES hover_core)
 ```
 
-`esp32/hoverboard_ros/main/idf_component.yml`:
+`esp32s3/main/idf_component.yml`:
 ```yaml
 dependencies:
   idf: ">=5.4,<5.5"
@@ -232,17 +232,17 @@ dependencies:
   espressif/mdns: "^1.8.0"
 ```
 
-`esp32/hoverboard_ros/components/hover_core/CMakeLists.txt` (sources are added in Tasks 2–4; a component without sources is valid):
+`esp32s3/components/hover_core/CMakeLists.txt` (sources are added in Tasks 2–4; a component without sources is valid):
 ```cmake
 idf_component_register(
     INCLUDE_DIRS "include")
 ```
 
-Also create the empty directory `esp32/hoverboard_ros/components/hover_core/include/hover_core/` with a `.gitkeep` file.
+Also create the empty directory `esp32s3/components/hover_core/include/hover_core/` with a `.gitkeep` file.
 
 - [x] **Step 3: Write the configuration menu**
 
-`esp32/hoverboard_ros/main/Kconfig.projbuild`:
+`esp32s3/main/Kconfig.projbuild`:
 ```
 menu "Hoverboard ROS bridge"
 
@@ -369,7 +369,7 @@ endmenu
 
 - [x] **Step 4: Write a minimal main**
 
-`esp32/hoverboard_ros/main/main.cpp` (Task 1 version, replaced in Task 8):
+`esp32s3/main/main.cpp` (Task 1 version, replaced in Task 8):
 ```cpp
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -392,16 +392,16 @@ extern "C" void app_main(void)
 Append to `.gitignore`:
 ```
 # ESP-IDF project
-esp32/hoverboard_ros/build/
-esp32/hoverboard_ros/managed_components/
-esp32/hoverboard_ros/dependencies.lock
-esp32/hoverboard_ros/sdkconfig
-esp32/hoverboard_ros/sdkconfig.old
+esp32s3/build/
+esp32s3/managed_components/
+esp32s3/dependencies.lock
+esp32s3/sdkconfig
+esp32s3/sdkconfig.old
 ```
 
 - [x] **Step 6: Write the README**
 
-`esp32/hoverboard_ros/README.md`:
+`esp32s3/README.md`:
 ````markdown
 # hoverboard_ros (ESP32-S3 firmware)
 
@@ -410,7 +410,7 @@ UDP travels over WiFi (station or access point) and/or USB tethering (CDC-NCM).
 
 ## Build and configure
 ```
-cd esp32/hoverboard_ros
+cd esp32s3
 idf.py set-target esp32s3      # first time only
 idf.py menuconfig              # "Hoverboard ROS bridge" menu: WiFi mode, SSID, password, pins
 idf.py build
@@ -452,7 +452,7 @@ The ESP 5V pin and the LIDAR share the DC-DC output. The IMU runs from the ESP 3
 
 - [x] **Step 7: Build**
 
-Run (from `esp32/hoverboard_ros`): `idf.py set-target esp32s3` then `idf.py build`
+Run (from `esp32s3`): `idf.py set-target esp32s3` then `idf.py build`
 Expected: build succeeds. `managed_components/espressif__esp_tinyusb` and `espressif__mdns` are downloaded. If `^1.7.0` of `esp_tinyusb` cannot be resolved, set the highest available `1.x` version in `idf_component.yml`; do not use 2.x.
 
 Run: `idf.py menuconfig`
@@ -461,7 +461,7 @@ Expected: "Hoverboard ROS bridge" menu shows all options. Under Component config
 - [ ] **Step 8: Commit (ask the user first)**
 
 ```bash
-git add .gitignore esp32/hoverboard_ros
+git add .gitignore esp32s3
 git commit -m "add: ESP-IDF skeleton for hoverboard_ros bridge"
 ```
 
@@ -470,11 +470,11 @@ git commit -m "add: ESP-IDF skeleton for hoverboard_ros bridge"
 ### Task 2: hover_core – hoverboard UART protocol
 
 **Files:**
-- Create: `esp32/hoverboard_ros/components/hover_core/include/hover_core/hover_protocol.h`
-- Create: `esp32/hoverboard_ros/components/hover_core/src/hover_protocol.cpp`
-- Modify: `esp32/hoverboard_ros/components/hover_core/CMakeLists.txt`
-- Create: `esp32/hoverboard_ros/test_host/test_core.cpp`
-- Create: `esp32/hoverboard_ros/test_host/run_tests.sh`
+- Create: `esp32s3/components/hover_core/include/hover_core/hover_protocol.h`
+- Create: `esp32s3/components/hover_core/src/hover_protocol.cpp`
+- Modify: `esp32s3/components/hover_core/CMakeLists.txt`
+- Create: `esp32s3/test_host/test_core.cpp`
+- Create: `esp32s3/test_host/run_tests.sh`
 
 **Interfaces:**
 - Produces (namespace `hover`):
@@ -485,7 +485,7 @@ git commit -m "add: ESP-IDF skeleton for hoverboard_ros bridge"
 
 - [x] **Step 1: Write the host test harness and failing tests**
 
-`esp32/hoverboard_ros/test_host/test_core.cpp`:
+`esp32s3/test_host/test_core.cpp`:
 ```cpp
 // Host tests for hover_core. Build and run with test_host/run_tests.sh.
 #include <cstdio>
@@ -546,7 +546,7 @@ int main()
 }
 ```
 
-`esp32/hoverboard_ros/test_host/run_tests.sh`:
+`esp32s3/test_host/run_tests.sh`:
 ```bash
 #!/usr/bin/env bash
 # Builds hover_core with the host compiler and runs the tests (Ubuntu or WSL).
@@ -559,7 +559,7 @@ g++ -std=c++17 -Wall -Wextra -I components/hover_core/include \
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run (Ubuntu or WSL, from `esp32/hoverboard_ros`): `bash test_host/run_tests.sh`
+Run (Ubuntu or WSL, from `esp32s3`): `bash test_host/run_tests.sh`
 Expected: compile error, `hover_core/hover_protocol.h: No such file or directory`.
 
 - [x] **Step 3: Implement the protocol**
@@ -714,7 +714,7 @@ Expected: `All host tests passed`
 - [ ] **Step 5: Commit (ask the user first)**
 
 ```bash
-git add esp32/hoverboard_ros/components esp32/hoverboard_ros/test_host
+git add esp32s3/components esp32s3/test_host
 git commit -m "add: hover_core hoverboard UART protocol with host tests"
 ```
 
@@ -723,14 +723,14 @@ git commit -m "add: hover_core hoverboard UART protocol with host tests"
 ### Task 3: hover_core – UDP link protocol, command watchdog, LIDAR chunker and starter
 
 **Files:**
-- Create: `esp32/hoverboard_ros/components/hover_core/include/hover_core/link_protocol.h`
-- Create: `esp32/hoverboard_ros/components/hover_core/src/link_protocol.cpp`
-- Create: `esp32/hoverboard_ros/components/hover_core/include/hover_core/cmd_watchdog.h`
-- Create: `esp32/hoverboard_ros/components/hover_core/include/hover_core/lidar_chunker.h`
-- Create: `esp32/hoverboard_ros/components/hover_core/src/lidar_chunker.cpp`
-- Create: `esp32/hoverboard_ros/components/hover_core/include/hover_core/lidar_starter.h`
-- Modify: `esp32/hoverboard_ros/components/hover_core/CMakeLists.txt`
-- Modify: `esp32/hoverboard_ros/test_host/test_core.cpp`
+- Create: `esp32s3/components/hover_core/include/hover_core/link_protocol.h`
+- Create: `esp32s3/components/hover_core/src/link_protocol.cpp`
+- Create: `esp32s3/components/hover_core/include/hover_core/cmd_watchdog.h`
+- Create: `esp32s3/components/hover_core/include/hover_core/lidar_chunker.h`
+- Create: `esp32s3/components/hover_core/src/lidar_chunker.cpp`
+- Create: `esp32s3/components/hover_core/include/hover_core/lidar_starter.h`
+- Modify: `esp32s3/components/hover_core/CMakeLists.txt`
+- Modify: `esp32s3/test_host/test_core.cpp`
 
 **Interfaces:**
 - Produces (namespace `proto`):
@@ -1118,7 +1118,7 @@ Expected: `All host tests passed`
 - [ ] **Step 5: Commit (ask the user first)**
 
 ```bash
-git add esp32/hoverboard_ros/components esp32/hoverboard_ros/test_host
+git add esp32s3/components esp32s3/test_host
 git commit -m "add: hover_core UDP link protocol, command watchdog, LIDAR chunker and starter"
 ```
 
@@ -1127,10 +1127,10 @@ git commit -m "add: hover_core UDP link protocol, command watchdog, LIDAR chunke
 ### Task 4: hover_core – WT901 IMU parser
 
 **Files:**
-- Create: `esp32/hoverboard_ros/components/hover_core/include/hover_core/wt901_parser.h`
-- Create: `esp32/hoverboard_ros/components/hover_core/src/wt901_parser.cpp`
-- Modify: `esp32/hoverboard_ros/components/hover_core/CMakeLists.txt`
-- Modify: `esp32/hoverboard_ros/test_host/test_core.cpp`
+- Create: `esp32s3/components/hover_core/include/hover_core/wt901_parser.h`
+- Create: `esp32s3/components/hover_core/src/wt901_parser.cpp`
+- Modify: `esp32s3/components/hover_core/CMakeLists.txt`
+- Modify: `esp32s3/test_host/test_core.cpp`
 
 **Interfaces:**
 - Produces (namespace `wt901`):
@@ -1266,13 +1266,13 @@ idf_component_register(
 Run: `bash test_host/run_tests.sh`
 Expected: `All host tests passed`
 
-Run (ESP-IDF terminal, from `esp32/hoverboard_ros`): `idf.py build`
+Run (ESP-IDF terminal, from `esp32s3`): `idf.py build`
 Expected: build succeeds (hover_core compiles for the ESP32-S3 too).
 
 - [ ] **Step 5: Commit (ask the user first)**
 
 ```bash
-git add esp32/hoverboard_ros/components esp32/hoverboard_ros/test_host
+git add esp32s3/components esp32s3/test_host
 git commit -m "add: hover_core WT901 IMU parser"
 ```
 
@@ -1626,10 +1626,10 @@ git commit -m "add: hoverboard_bridge package with UDP protocol and bench probe"
 ### Task 6: ESP networking – WiFi station or access point with mDNS
 
 **Files:**
-- Create: `esp32/hoverboard_ros/main/net_wifi.h`
-- Create: `esp32/hoverboard_ros/main/net_wifi.cpp`
-- Modify: `esp32/hoverboard_ros/main/main.cpp`
-- Modify: `esp32/hoverboard_ros/main/CMakeLists.txt`
+- Create: `esp32s3/main/net_wifi.h`
+- Create: `esp32s3/main/net_wifi.cpp`
+- Modify: `esp32s3/main/main.cpp`
+- Modify: `esp32s3/main/CMakeLists.txt`
 
 **Interfaces:**
 - Consumes: `CONFIG_HB_WIFI_*`, `CONFIG_HB_HOSTNAME` (Task 1).
@@ -1788,7 +1788,7 @@ Expected: the monitor shows `Station IP ...`, ping replies arrive.
 - [ ] **Step 5: Commit (ask the user first)**
 
 ```bash
-git add esp32/hoverboard_ros/main
+git add esp32s3/main
 git commit -m "add: WiFi station/access point networking for hoverboard_ros"
 ```
 
@@ -1797,10 +1797,10 @@ git commit -m "add: WiFi station/access point networking for hoverboard_ros"
 ### Task 7: ESP networking – USB tethering (CDC-NCM)
 
 **Files:**
-- Create: `esp32/hoverboard_ros/main/net_usb.h`
-- Create: `esp32/hoverboard_ros/main/net_usb.cpp`
-- Modify: `esp32/hoverboard_ros/main/main.cpp`
-- Modify: `esp32/hoverboard_ros/main/CMakeLists.txt`
+- Create: `esp32s3/main/net_usb.h`
+- Create: `esp32s3/main/net_usb.cpp`
+- Modify: `esp32s3/main/main.cpp`
+- Modify: `esp32s3/main/CMakeLists.txt`
 
 **Interfaces:**
 - Consumes: `CONFIG_HB_USB_NET` (Task 1); `esp_netif_init()` and the default event loop already done in `app_main` (Task 6).
@@ -1935,7 +1935,7 @@ Expected: replies. On Windows 11 the same works: `ipconfig` shows 192.168.7.2.
 - [ ] **Step 5: Commit (ask the user first)**
 
 ```bash
-git add esp32/hoverboard_ros/main
+git add esp32s3/main
 git commit -m "add: USB CDC-NCM tethering for hoverboard_ros"
 ```
 
@@ -1944,16 +1944,16 @@ git commit -m "add: USB CDC-NCM tethering for hoverboard_ros"
 ### Task 8: ESP bridge loop (UDP ↔ hoverboard, IMU, LIDAR, logs)
 
 **Files:**
-- Create: `esp32/hoverboard_ros/main/uart_port.h`
-- Create: `esp32/hoverboard_ros/main/uart_port.cpp`
-- Create: `esp32/hoverboard_ros/main/udp_link.h`
-- Create: `esp32/hoverboard_ros/main/udp_link.cpp`
-- Create: `esp32/hoverboard_ros/main/log_forward.h`
-- Create: `esp32/hoverboard_ros/main/log_forward.cpp`
-- Create: `esp32/hoverboard_ros/main/bridge.h`
-- Create: `esp32/hoverboard_ros/main/bridge.cpp`
-- Modify: `esp32/hoverboard_ros/main/main.cpp` (final version)
-- Modify: `esp32/hoverboard_ros/main/CMakeLists.txt` (final version)
+- Create: `esp32s3/main/uart_port.h`
+- Create: `esp32s3/main/uart_port.cpp`
+- Create: `esp32s3/main/udp_link.h`
+- Create: `esp32s3/main/udp_link.cpp`
+- Create: `esp32s3/main/log_forward.h`
+- Create: `esp32s3/main/log_forward.cpp`
+- Create: `esp32s3/main/bridge.h`
+- Create: `esp32s3/main/bridge.cpp`
+- Modify: `esp32s3/main/main.cpp` (final version)
+- Modify: `esp32s3/main/CMakeLists.txt` (final version)
 
 **Interfaces:**
 - Consumes: `hover::*` (Task 2), `proto::*`, `util::CmdWatchdog`, `util::LidarChunker`, `util::LidarStarter` (Task 3), `wt901::Parser` (Task 4), `wifi_start()` (Task 6), `usb_net_start()` (Task 7).
@@ -2552,7 +2552,7 @@ Expected: same telemetry over WiFi.
 - [ ] **Step 8: Commit (ask the user first)**
 
 ```bash
-git add esp32/hoverboard_ros/main
+git add esp32s3/main
 git commit -m "add: hoverboard_ros UDP bridge loop"
 ```
 
@@ -2562,7 +2562,7 @@ git commit -m "add: hoverboard_ros UDP bridge loop"
 
 **Files:**
 - Modify: `ros2/hoverboard_bridge/hoverboard_bridge/link_probe.py`
-- Modify: `esp32/hoverboard_ros/README.md`
+- Modify: `esp32s3/README.md`
 
 **Interfaces:**
 - Consumes: `IMU` and `LIDAR_RX` datagrams from Task 8; `MSG_LIDAR_TX` and `encode` from Task 5.
@@ -2637,7 +2637,7 @@ If the line stays silent, check in this order: TX and RX not swapped, ground sha
 
 - [ ] **Step 5: Document findings**
 
-Append to `esp32/hoverboard_ros/README.md`:
+Append to `esp32s3/README.md`:
 ````markdown
 ## Sensor notes
 - WT901C: enabling the IMU requires console output = None; ESP logs are then visible only through `link_probe` or the ROS node.
@@ -2651,7 +2651,7 @@ Append to `esp32/hoverboard_ros/README.md`:
 - [ ] **Step 6: Commit (ask the user first)**
 
 ```bash
-git add ros2/hoverboard_bridge esp32/hoverboard_ros/README.md
+git add ros2/hoverboard_bridge esp32s3/README.md
 git commit -m "add: IMU and LIDAR bring-up support in link_probe"
 ```
 
@@ -3341,7 +3341,7 @@ git commit -m "add: hoverboard_bridge ROS2 node and launch file"
 
 **Files:**
 - Modify: `ros2/hoverboard_bridge/config/bridge.yaml` (calibrated values)
-- Modify: `esp32/hoverboard_ros/README.md` (append ROS2 usage)
+- Modify: `esp32s3/README.md` (append ROS2 usage)
 
 **Interfaces:**
 - Consumes: everything above, with the full robot assembled.
@@ -3389,7 +3389,7 @@ Precondition: Task 9 saw LDROBOT frames (`54 2c`).
 
 - [ ] **Step 7: Document ROS2 usage**
 
-Append to `esp32/hoverboard_ros/README.md`:
+Append to `esp32s3/README.md`:
 ````markdown
 ## ROS2 (Humble)
 ```
@@ -3403,7 +3403,7 @@ Calibrated parameters live in `ros2/hoverboard_bridge/config/bridge.yaml`.
 - [ ] **Step 8: Commit (ask the user first)**
 
 ```bash
-git add ros2/hoverboard_bridge/config/bridge.yaml esp32/hoverboard_ros/README.md
+git add ros2/hoverboard_bridge/config/bridge.yaml esp32s3/README.md
 git commit -m "update: calibrated hoverboard_bridge parameters and ROS2 usage notes"
 ```
 

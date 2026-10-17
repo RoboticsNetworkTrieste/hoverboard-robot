@@ -5,7 +5,7 @@ UDP travels over WiFi (station or access point) and/or USB tethering (CDC-NCM).
 
 ## Build and configure
 ```
-cd esp32/hoverboard_ros
+cd esp32s3
 idf.py set-target esp32s3      # first time only
 idf.py menuconfig              # "Hoverboard ROS bridge" menu: WiFi mode, SSID, password, pins
 idf.py build
