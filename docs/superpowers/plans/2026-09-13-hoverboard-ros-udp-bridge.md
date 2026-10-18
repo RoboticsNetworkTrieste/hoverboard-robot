@@ -2863,7 +2863,7 @@ Append to `esp32s3/README.md`:
   - `acc_to_m_s2(raw: int) -> float`, `gyro_to_rad_s(raw: int) -> float`, `angle_to_rad(raw: int) -> float`
   - `euler_to_quaternion(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]` (x, y, z, w)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `ros2/hoverboard_bridge/test/test_kinematics.py`:
 ```python
@@ -2923,12 +2923,12 @@ def test_yaw_quaternion():
     assert (z, w) == pytest.approx((math.sqrt(0.5), math.sqrt(0.5)))
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_kinematics.py test/test_imu_convert.py -q`
 Expected: FAIL with `ModuleNotFoundError` for `hoverboard_bridge.kinematics`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `ros2/hoverboard_bridge/hoverboard_bridge/kinematics.py`:
 ```python
@@ -3023,10 +3023,16 @@ def euler_to_quaternion(roll, pitch, yaw):
             cr * cp * cy + sr * sp * sy)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: all tests pass (`9 passed`).
+
+Review outcome (2026-10-18): the repository version extends the code above, with 3 more tests (`12 passed`):
+- `twist_to_commands` returns `(0, 0)` for non-finite input or overflow.
+- On saturation both wheels are scaled by the same factor, so the requested curvature is kept
+  (`(2.0, 1.0)` gives `(818, 1000)` instead of `(1000, 1000)`); `CMD_FULL_SCALE` names the firmware full scale.
+- `DiffDriveParams` rejects parameters that are not > 0.
 
 ---
 
@@ -3138,6 +3144,10 @@ Expected: `1 passed`
 
 **Interfaces:**
 - Consumes: `link_protocol` (Task 6), `kinematics`, `imu_convert` (Task 11), `LidarPty` (Task 12).
+
+Note from the Task 11 review: the ESP tick totals restart at 0 when the ESP reboots, and `OdometryIntegrator`
+would then see one huge backward step. The node must detect the reboot (the ESP `stamp_ms` going backwards) and
+create a new `OdometryIntegrator` reference without losing the pose, or the odometry jumps.
 - Produces, ROS interfaces of node `hoverboard_bridge`:
   - Subscribes `cmd_vel` (`geometry_msgs/Twist`)
   - Publishes `odom` (`nav_msgs/Odometry`), TF `odom -> base_link`, `joint_states` (`sensor_msgs/JointState`, joints `left_wheel_joint`, `right_wheel_joint`), `imu/data` (`sensor_msgs/Imu`), `hoverboard/battery` (`sensor_msgs/BatteryState`), `hoverboard/temperature` (`sensor_msgs/Temperature`)
