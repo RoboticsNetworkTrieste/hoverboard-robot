@@ -28,7 +28,7 @@ Press RESET after flashing to start the firmware.
 |---|---|
 | USB tethering | 192.168.7.1 (PC gets 192.168.7.2 by DHCP) |
 | WiFi access point | 192.168.4.1 |
-| WiFi station | hoverboard.local or the router-assigned IP |
+| WiFi station | the static IP set in menuconfig (default 192.168.1.50), or hoverboard.local |
 
 UDP port: 8888. Quick test without ROS, from any machine with Python 3 on the robot network:
 `python3 -m hoverboard_bridge.link_probe --host <ESP address>` (run from `ros2/hoverboard_bridge`).

@@ -31,6 +31,30 @@ menu "Hoverboard ROS bridge"
         default 6
         depends on HB_WIFI_MODE_AP
 
+    config HB_WIFI_STA_STATIC_IP
+        bool "Station: use a static IP"
+        default y
+        depends on HB_WIFI_MODE_STA
+        help
+            Gives the ESP a fixed address on the router network, so the PC (and the ROS2
+            container, which has no mDNS) can reach it without discovery. Choose an address
+            in the router subnet but outside its DHCP pool. Off: the router assigns the IP.
+
+    config HB_WIFI_STA_IP
+        string "Station static IP"
+        default "192.168.1.50"
+        depends on HB_WIFI_STA_STATIC_IP
+
+    config HB_WIFI_STA_NETMASK
+        string "Station netmask"
+        default "255.255.255.0"
+        depends on HB_WIFI_STA_STATIC_IP
+
+    config HB_WIFI_STA_GATEWAY
+        string "Station gateway"
+        default "192.168.1.1"
+        depends on HB_WIFI_STA_STATIC_IP
+
     config HB_HOSTNAME
         string "mDNS hostname"
         default "hoverboard"
