@@ -102,3 +102,14 @@ udp: Telemetry peer <PC IP>:<port>            (each time a probe starts)
 | `bad` keeps rising | Noisy line or loose contact on GPIO3, ground |
 | Hoverboard repeats 3 low beeps | Serial timeout on the mainboard: GPIO4 -> hoverboard RX wire |
 | `HOVER_OK` but wheels do not move | `CMD_TIMEOUT` in the status (commands not reaching the ESP), or command too small |
+
+## Sensor notes
+- WT901C: UART0 at 115200 baud (this unit; the factory default is 9600, set `HB_IMU_BAUD` to match).
+  UART0 is also the default console, so `sdkconfig.defaults` sets console output = None; ESP logs are then
+  visible only through `link_probe` or the ROS node. Expect `IMU_OK` in the probe status and |acc| about 1 g at rest.
+- LIDAR STL-50B2: LDROBOT protocol at 230400 baud. The ESP sends `54 A0 04 00 00 00 00 5E` at
+  boot and resends it while the line is silent, so the sensor spins with no action from the PC.
+  Expect `[lidar] 54 2c ...` in the probe output and about 17 kB/s at 7 Hz.
+  Protocol notes: `docs/lidar/STL-50B2.md`.
+  To send an extra command by hand, for example set the speed to 7 Hz:
+  `python3 -m hoverboard_bridge.link_probe --host <ESP address> --lidar-hex "54 A2 04 D8 09 00 00 16"`.

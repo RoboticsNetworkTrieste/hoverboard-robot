@@ -14,22 +14,23 @@
 
 ## Status and open issues (2026-10-18)
 
-Bench result: Tasks 1-7, 9 and 10 are implemented. Over the WiFi access point, all wiring is confirmed:
-hoverboard feedback and commands, WT901C IMU and LIDAR data reach the PC as UDP datagrams.
+Bench result: Tasks 1-7, 9 and 10 are done and verified on the hardware, over the WiFi access point and in
+station mode: hoverboard feedback and commands, WT901C IMU and LIDAR data reach the PC as UDP datagrams.
 The configuration used for that run is now the default (`Kconfig.projbuild`, `sdkconfig.defaults`):
 access point mode with placeholder SSID/password, pins as in "UART assignment", IMU enabled at 115200 baud,
 console output None, WPA3-SAE on (ESP-IDF default).
 
 Open issues:
-- **Packet loss.** Many datagrams were lost during the bench tests. Not investigated yet. The `seq` field is
-  shared by all ESP->PC messages, so gaps in it measure loss directly. Suspects: `UdpLink::send` drops silently
-  when the WiFi TX queue is full (one datagram per IMU packet plus LIDAR chunks plus 50 Hz state), RF conditions,
-  PC-side receive loop.
-- **Station mode does not connect.** The ESP no longer joins the router; earlier it connected after a few
-  disconnects. Access point mode was used as a workaround. Not investigated yet. The disconnect log does not print
-  the reason code, which would be the first clue.
-- Task 7 Step 5 (station checks), Task 9 Step 7 watchdog checks and Task 10 Step 5 (README sensor notes) still
-  to be confirmed or done; then Tasks 11-14.
+- **Packet loss.** The `seq` field is shared by all ESP->PC messages, so gaps in it measure loss directly.
+  Station mode, 20 s, wheels still: 13.5% of ESP->PC datagrams lost (~145 msg/s sent), in bursts (seconds at 0%,
+  then 3-4 s at ~50%); `CMD_TIMEOUT` set in 67% of `WHEEL_STATE` (PC->ESP commands lost too); ping 15% lost with
+  RTT up to 1.7 s; repeated `ba-add`/`ba-del` in the ESP WiFi log. Received data is intact (0 LIDAR CRC errors,
+  0 bad hoverboard frames). Conclusion so far: RF link, most likely ESP <-> router, not the ESP send queue.
+  Still to compare: access point mode (one hop), PC on Ethernet, ESP closer to the router.
+- **Station mode connection is unreliable.** On 2026-10-18 the ESP joined the router in station mode (static IP
+  and DHCP), but in earlier sessions it failed to connect and access point mode was used instead. Not explained
+  yet; the disconnect log does not print the reason code, which would be the first clue.
+- Next: Tasks 11-14.
 
 ## Design Summary
 
@@ -1870,7 +1871,7 @@ Expected: prints `no telemetry` about 5 times and exits with code 0.
 - Produces: Kconfig symbols `HB_WIFI_STA_STATIC_IP`, `HB_WIFI_STA_IP`, `HB_WIFI_STA_NETMASK`, `HB_WIFI_STA_GATEWAY`.
 - Produces: `esp_err_t wifi_start();`. It must be called after `nvs_flash_init()`, `esp_netif_init()` and `esp_event_loop_create_default()`.
 
-- [ ] **Step 1: Add the static IP options**
+- [x] **Step 1: Add the static IP options**
 
 In `main/Kconfig.projbuild`, insert after the `HB_WIFI_AP_CHANNEL` entry:
 ```
@@ -1904,7 +1905,7 @@ In `esp32s3/README.md`, replace the "WiFi station" row of the "Reaching the ESP"
 | WiFi station | the static IP set in menuconfig (default 192.168.1.50), or hoverboard.local |
 ```
 
-- [ ] **Step 2: Implement WiFi start**
+- [x] **Step 2: Implement WiFi start**
 
 `main/net_wifi.h`:
 ```cpp
@@ -2019,7 +2020,7 @@ esp_err_t wifi_start()
 }
 ```
 
-- [ ] **Step 3: Call it from main**
+- [x] **Step 3: Call it from main**
 
 Replace `main/main.cpp` with:
 ```cpp
@@ -2064,7 +2065,7 @@ idf_component_register(
     REQUIRES hover_core esp_wifi esp_netif esp_event nvs_flash)
 ```
 
-- [ ] **Step 4: Build**
+- [x] **Step 4: Build**
 
 Run: `idf.py build`
 Expected: build succeeds.
@@ -2072,7 +2073,7 @@ Expected: build succeeds.
 Run: `idf.py menuconfig`
 Expected: with WiFi mode = Station, the four static IP options appear; with Access point, they are hidden.
 
-- [ ] **Step 5: Hardware check (needs the ESP32-S3; ask the user before flashing)**
+- [x] **Step 5: Hardware check (needs the ESP32-S3; ask the user before flashing)** (2026-10-18: AP, station with static IP and station with DHCP all work; ping from host, `hoverboard.local` and container OK)
 
 AP mode (default): `idf.py -p <PORT> flash monitor`. Connect the PC to SSID `hoverboard-robot`, then run `ping 192.168.4.1`.
 Expected: the monitor shows `WiFi started`, ping replies arrive.
@@ -2114,7 +2115,7 @@ Moved to "Deferred: USB tethering" at the end of the plan. It is implemented onl
   - `void log_forward_install(); size_t log_forward_read(char* buf, size_t cap); constexpr size_t kLogLineMax = 128;`
   - `void bridge_run();` (never returns)
 
-- [ ] **Step 0: IMU TX pin option**
+- [x] **Step 0: IMU TX pin option**
 
 In `main/Kconfig.projbuild`, insert after the `HB_IMU_RX_GPIO` entry:
 ```
@@ -2127,7 +2128,7 @@ In `main/Kconfig.projbuild`, insert after the `HB_IMU_RX_GPIO` entry:
             the line idles high.
 ```
 
-- [ ] **Step 1: UART wrapper**
+- [x] **Step 1: UART wrapper**
 
 `main/uart_port.h`:
 ```cpp
@@ -2193,7 +2194,7 @@ void UartPort::write(const uint8_t* data, size_t len)
 }
 ```
 
-- [ ] **Step 2: UDP link**
+- [x] **Step 2: UDP link**
 
 `main/udp_link.h`:
 ```cpp
@@ -2285,7 +2286,7 @@ void UdpLink::send(const uint8_t* data, size_t len)
 }
 ```
 
-- [ ] **Step 3: Log forwarding**
+- [x] **Step 3: Log forwarding**
 
 `main/log_forward.h`:
 ```cpp
@@ -2361,7 +2362,7 @@ size_t log_forward_read(char* buf, size_t cap)
 }
 ```
 
-- [ ] **Step 4: The bridge**
+- [x] **Step 4: The bridge**
 
 `main/bridge.h`:
 ```cpp
@@ -2646,7 +2647,7 @@ void bridge_run()
 }
 ```
 
-- [ ] **Step 5: Final main and CMake**
+- [x] **Step 5: Final main and CMake**
 
 Replace `main/main.cpp` with:
 ```cpp
@@ -2695,12 +2696,12 @@ idf_component_register(
     REQUIRES hover_core esp_wifi esp_netif esp_event nvs_flash esp_driver_uart esp_timer lwip)
 ```
 
-- [ ] **Step 6: Build**
+- [x] **Step 6: Build**
 
 Run: `idf.py build`
 Expected: build succeeds with no warnings from `main/`.
 
-- [ ] **Step 7: Hardware check with the hoverboard (ask the user before flashing; wheels lifted)**
+- [x] **Step 7: Hardware check with the hoverboard (ask the user before flashing; wheels lifted)** (2026-10-18, station mode: all checks passed; access point mode also gave telemetry)
 
 In `idf.py menuconfig`, Hoverboard ROS bridge: WiFi mode = Station with SSID, password and static IP for the robot network (as in Task 7), USB tethering = no. The PC joins the same network.
 
@@ -2713,7 +2714,7 @@ Run: `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --left 50 
 Expected: both wheels spin, `rpm` values are non-zero, and wheels stop after the probe ends.
 
 Watchdog: start the same command and kill the probe with Ctrl+C mid-run.
-Expected: wheels stop within about 0.3 s.
+Expected: wheels stop within about 0.5 s (300 ms ESP timeout plus the firmware deceleration; measured 0.5-0.6 s).
 
 Watchdog flag (no hoverboard needed): a new probe cannot see `CMD_TIMEOUT`, because its first command both selects it as telemetry peer and feeds the watchdog. Instead, send commands for 1 s, then stop and keep listening on the same socket. Run from `ros2/hoverboard_bridge`:
 ```bash
@@ -2759,7 +2760,7 @@ Expected: same telemetry.
 - Consumes: `IMU` and `LIDAR_RX` datagrams from Task 9; `MSG_LIDAR_TX` and `encode` from Task 6.
 - Produces: `link_probe` options `--lidar-hex "<hex bytes>"` (sent once to the LIDAR, for extra commands on top of the start the ESP already sends) and a hex dump of the first 64 received LIDAR bytes.
 
-- [ ] **Step 1: Extend the probe for LIDAR identification**
+- [x] **Step 1: Extend the probe for LIDAR identification**
 
 In `link_probe.py`, add after the `--duration` argument:
 ```python
@@ -2799,12 +2800,12 @@ with:
                 lidar_bytes += len(msg.body)
 ```
 
-- [ ] **Step 2: Smoke test**
+- [x] **Step 2: Smoke test**
 
 Run: `python3 -m hoverboard_bridge.link_probe --host 127.0.0.1 --duration 1 --lidar-hex "54 A3 04 00 00 00 00 62"`
 Expected: exits with code 0 and prints `no telemetry`.
 
-- [ ] **Step 3: IMU hardware check (ask the user before flashing)**
+- [x] **Step 3: IMU hardware check (ask the user before flashing)** (2026-10-18: `IMU_OK`, |acc| 0.99 g at rest, angles consistent with acc; IMU at 115200 baud)
 
 In `idf.py menuconfig`:
 - Hoverboard ROS bridge > Enable WT901C IMU on UART0: yes
@@ -2818,7 +2819,7 @@ Wire the WT901C as in "Electrical wiring": VCC to the 5V rail, TX through shifte
 Run: `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --duration 10`
 Expected: status lines contain `IMU_OK`, and `imu angle=(...)` changes when the IMU is tilted.
 
-- [ ] **Step 4: LIDAR hardware check**
+- [x] **Step 4: LIDAR hardware check** (2026-10-18: 0 CRC errors over 4500 frames, 7.00 Hz, full 360 deg, health normal)
 
 Wire the LIDAR as in "Electrical wiring": 5V rail, TX through shifter HV1 -> LV1 to GPIO7, GPIO8 through shifter LV2 -> HV2 to RX. Before connecting the shifter, measure the LIDAR TX idle voltage and record it in "Electrical wiring".
 
@@ -2829,7 +2830,7 @@ Expected: the motor spins up within a second of the ESP booting, `[lidar] 54 2c 
 
 If the line stays silent, check in this order: TX and RX not swapped, ground shared with the ESP, shifter powered (HV 5V, LV 3.3V), each signal on the matching HV/LV channel pair, LIDAR on a 5V rail that can supply the motor, `HB_LIDAR_AUTOSTART` enabled in menuconfig. The baud is known to be 230400 and the protocol is documented in `docs/lidar/STL-50B2.md`: do not go hunting for either.
 
-- [ ] **Step 5: Document findings**
+- [x] **Step 5: Document findings**
 
 Append to `esp32s3/README.md`:
 ````markdown
