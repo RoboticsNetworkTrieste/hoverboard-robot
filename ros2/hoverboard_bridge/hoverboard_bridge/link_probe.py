@@ -31,7 +31,7 @@ def print_ticks_per_rev(first, last, elapsed, rpm_sum, rpm_count):
     for name, d_ticks, rpm in (('left', last.ticks_l - first.ticks_l, rpm_sum[0] / rpm_count),
                                ('right', last.ticks_r - first.ticks_r, rpm_sum[1] / rpm_count)):
         revs = rpm / 60.0 * elapsed
-        estimate = d_ticks / revs if abs(revs) > 0.5 else float('nan')
+        estimate = abs(d_ticks / revs) if abs(revs) > 0.5 else float('nan')  # Right rpm and ticks differ in sign
         print(f'{name}: d_ticks={d_ticks} mean_rpm={rpm:.1f} ticks_per_rev~{estimate:.1f}')
 
 

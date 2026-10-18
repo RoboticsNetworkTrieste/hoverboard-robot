@@ -102,6 +102,14 @@ menu "Hoverboard ROS bridge"
         default 6
         depends on HB_ENABLE_IMU
 
+    config HB_IMU_TX_GPIO
+        int "IMU UART TX GPIO"
+        default 9
+        depends on HB_ENABLE_IMU
+        help
+            Wired to the WT901C RX through the level shifter. Nothing is sent yet;
+            the line idles high.
+
     config HB_IMU_BAUD
         int "IMU UART baud"
         default 9600

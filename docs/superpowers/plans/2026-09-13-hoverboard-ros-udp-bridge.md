@@ -126,7 +126,7 @@ ESP wheel values are raw from the firmware: `ticks_*` are the unwrapped `wheel*_
 - Command packet: `uint16 start=0xABCD, int16 steer, int16 speed, uint16 checksum = start^steer^speed` (8 bytes).
 - Feedback packet (22 bytes): `start, cmd1, cmd2, speedR_meas, speedL_meas, wheelR_cnt, wheelL_cnt, batVoltage, boardTemp, cmdLed, checksum`. The checksum is the XOR of all previous fields.
 - `wheel*_cnt` counts hall transitions modulo 9000.
-- Without `INVERT_*_DIRECTION` the firmware negates the right command internally, while `n_mot` of the right motor has the opposite sign of forward motion. The PC defaults are therefore `right_feedback_sign = -1`, to be verified in Task 14.
+- Without `INVERT_*_DIRECTION` the firmware negates the right command internally, so positive commands drive both wheels forward. `speedR_meas` (`n_mot` of the right motor) is negative when moving forward, while `odom_r` is already negated in `Src/bldc.c`, so `wheelR_cnt` counts up when moving forward. Ticks and rpm therefore need separate signs on the PC: defaults `right_ticks_sign = 1`, `right_rpm_sign = -1`. Verified on the bench in Task 9 (command 50/50: both wheels forward, rpm L +10 / R -10, both tick counters increasing).
 
 ## Global Constraints
 
@@ -1756,7 +1756,7 @@ def print_ticks_per_rev(first, last, elapsed, rpm_sum, rpm_count):
     for name, d_ticks, rpm in (('left', last.ticks_l - first.ticks_l, rpm_sum[0] / rpm_count),
                                ('right', last.ticks_r - first.ticks_r, rpm_sum[1] / rpm_count)):
         revs = rpm / 60.0 * elapsed
-        estimate = d_ticks / revs if abs(revs) > 0.5 else float('nan')
+        estimate = abs(d_ticks / revs) if abs(revs) > 0.5 else float('nan')  # Right rpm and ticks differ in sign
         print(f'{name}: d_ticks={d_ticks} mean_rpm={rpm:.1f} ticks_per_rev~{estimate:.1f}')
 
 
@@ -2314,7 +2314,11 @@ int forwardVprintf(const char* fmt, va_list args)
         va_end(copy);
         if (n > 0) {
             line.len = (size_t)n < sizeof(line.text) ? (size_t)n : sizeof(line.text) - 1;
-            xQueueSend(s_queue, &line, 0);  // Dropped if the queue is full
+            if (xQueueSend(s_queue, &line, 0) != pdTRUE) {
+                LogLine oldest;  // Queue full: drop the oldest line so the newest survive
+                xQueueReceive(s_queue, &oldest, 0);
+                xQueueSend(s_queue, &line, 0);
+            }
         }
     }
     return s_previous != nullptr ? s_previous(fmt, args) : 0;
@@ -2379,6 +2383,7 @@ constexpr uint32_t kStatePeriodMs = 20;      // 50 Hz telemetry
 constexpr uint32_t kFreshMs = 500;           // Feedback/IMU age for status bits
 constexpr size_t kLidarChunkBytes = 400;
 constexpr uint32_t kLidarFlushMs = 10;
+constexpr int kLogLinesPerTick = 4;  // Larger bursts get dropped by the WiFi TX queue
 
 uint32_t nowMs()
 {
@@ -2602,7 +2607,9 @@ void Bridge::sendLogs(uint32_t now)
     if (!udp_.hasPeer()) return;  // Keep queued lines until a PC is listening
     char line[kLogLineMax];
     size_t n;
-    while ((n = log_forward_read(line, sizeof(line))) > 0) sendMessage(proto::kLog, line, n, now);
+    for (int i = 0; i < kLogLinesPerTick && (n = log_forward_read(line, sizeof(line))) > 0; i++) {
+        sendMessage(proto::kLog, line, n, now);
+    }
 }
 
 void Bridge::sendMessage(proto::MsgType type, const void* body, size_t len, uint32_t now)
@@ -2687,7 +2694,36 @@ Run: `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --left 50 
 Expected: both wheels spin, `rpm` values are non-zero, and wheels stop after the probe ends.
 
 Watchdog: start the same command and kill the probe with Ctrl+C mid-run.
-Expected: wheels stop within about 0.3 s. A new probe with `--duration 1` shows `CMD_TIMEOUT` on its first status line.
+Expected: wheels stop within about 0.3 s.
+
+Watchdog flag (no hoverboard needed): a new probe cannot see `CMD_TIMEOUT`, because its first command both selects it as telemetry peer and feeds the watchdog. Instead, send commands for 1 s, then stop and keep listening on the same socket. Run from `ros2/hoverboard_bridge`:
+```bash
+PYTHONPATH=. python3 - <HB_WIFI_STA_IP> <<'EOF'
+import socket, sys, time
+from hoverboard_bridge import link_protocol as lp
+addr = (sys.argv[1], 8888)
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.setblocking(False)
+t0 = time.monotonic(); t_cmd = -1.0; seq = 0; last = None; n = 0
+while (now := time.monotonic() - t0) < 2.0:
+    if now < 1.0 and now - t_cmd >= 0.05:
+        s.sendto(lp.encode_cmd_wheels(seq, 0, 0), addr); seq += 1; t_cmd = now
+    try:
+        while True:
+            m = lp.decode(s.recvfrom(2048)[0])
+            if m and m.type == lp.MSG_WHEEL_STATE:
+                n += 1
+                timeout = bool(lp.parse_wheel_state(m.body).status & lp.STATUS_CMD_TIMEOUT)
+                if timeout != last:
+                    print(f't={now:.3f}s CMD_TIMEOUT={timeout}, last command at {t_cmd:.3f}s')
+                    last = timeout
+    except BlockingIOError:
+        pass
+    time.sleep(0.002)
+print(f'WHEEL_STATE received: {n} in 2 s')
+EOF
+```
+Expected: `CMD_TIMEOUT=False` at the start, `CMD_TIMEOUT=True` about 300-320 ms after the last command, about 100 `WHEEL_STATE` messages (50 Hz).
 
 Optional: reflash with WiFi mode = Access point and repeat the first probe command with `--host 192.168.4.1` (PC joined to the ESP access point).
 Expected: same telemetry.
@@ -3136,8 +3172,10 @@ class BridgeNode(Node):
             'max_cmd': 1000,
             'left_cmd_sign': 1,
             'right_cmd_sign': 1,
-            'left_feedback_sign': 1,
-            'right_feedback_sign': -1,
+            'left_ticks_sign': 1,
+            'right_ticks_sign': 1,
+            'left_rpm_sign': 1,
+            'right_rpm_sign': -1,
             'cmd_rate': 20.0,
             'cmd_vel_timeout': 0.5,
             'link_timeout': 1.0,
@@ -3155,7 +3193,8 @@ class BridgeNode(Node):
                                    self._param('ticks_per_rev'), self._param('n_mot_max'), self._param('max_cmd'))
         self.odom = OdometryIntegrator(self.kin)
         self.cmd_signs = (self._param('left_cmd_sign'), self._param('right_cmd_sign'))
-        self.fb_signs = (self._param('left_feedback_sign'), self._param('right_feedback_sign'))
+        self.ticks_signs = (self._param('left_ticks_sign'), self._param('right_ticks_sign'))
+        self.rpm_signs = (self._param('left_rpm_sign'), self._param('right_rpm_sign'))
         self.cmd_vel_timeout_ns = int(self._param('cmd_vel_timeout') * 1e9)
         self.link_timeout_ns = int(self._param('link_timeout') * 1e9)
         self.odom_frame = self._param('odom_frame')
@@ -3254,10 +3293,10 @@ class BridgeNode(Node):
 
     def publish_wheel_state(self, state):
         stamp = self.get_clock().now().to_msg()
-        ticks_l = state.ticks_l * self.fb_signs[0]
-        ticks_r = state.ticks_r * self.fb_signs[1]
-        w_left = rpm_to_rad_s(state.rpm_l * self.fb_signs[0])
-        w_right = rpm_to_rad_s(state.rpm_r * self.fb_signs[1])
+        ticks_l = state.ticks_l * self.ticks_signs[0]
+        ticks_r = state.ticks_r * self.ticks_signs[1]
+        w_left = rpm_to_rad_s(state.rpm_l * self.rpm_signs[0])
+        w_right = rpm_to_rad_s(state.rpm_r * self.rpm_signs[1])
         self.odom.update(ticks_l, ticks_r)
         linear = (w_left + w_right) * self.kin.wheel_radius / 2.0
         angular = (w_right - w_left) * self.kin.wheel_radius / self.kin.wheel_separation
@@ -3384,8 +3423,10 @@ hoverboard_bridge:
     max_cmd: 1000
     left_cmd_sign: 1
     right_cmd_sign: 1
-    left_feedback_sign: 1
-    right_feedback_sign: -1
+    left_ticks_sign: 1             # Firmware tick counters count up when moving forward
+    right_ticks_sign: 1
+    left_rpm_sign: 1               # Right speedR_meas is negative when moving forward
+    right_rpm_sign: -1
     cmd_rate: 20.0
     cmd_vel_timeout: 0.5
     link_timeout: 1.0
@@ -3471,12 +3512,12 @@ Expected: both wheels turn in the robot's forward direction. For each wheel that
 - [ ] **Step 3: Feedback signs (wheels lifted, still commanding forward)**
 
 Run: `ros2 topic echo /joint_states`
-Expected: both `velocity` values positive and both `position` values increasing. For each wheel with a negative value, flip its `*_feedback_sign`. If velocity and position disagree in sign for the same wheel, stop and report: the firmware tick direction differs from `n_mot` and needs a separate sign.
+Expected: both `velocity` values positive and both `position` values increasing. For each wheel with a negative `velocity`, flip its `*_rpm_sign`; for each wheel with a decreasing `position`, flip its `*_ticks_sign`. The defaults already match the bench result of Task 9, so no change is expected.
 
 - [ ] **Step 4: Ticks per revolution (stop the ROS node first)**
 
 Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --left 100 --right 100 --duration 10`
-Expected: the final lines print `ticks_per_rev~N` for both wheels. Set `ticks_per_rev` to the nearest integer (90 is expected for 15 pole-pair hub motors).
+Expected: the final lines print `ticks_per_rev~N` for both wheels. Set `ticks_per_rev` to the nearest integer (90 is expected for 15 pole-pair hub motors; the Task 9 bench run gave about 0.8 revolutions and 70-73 ticks in 5 s at 10 rpm, consistent with 90).
 
 - [ ] **Step 5: Wheel radius and separation (robot on the floor)**
 
