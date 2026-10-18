@@ -30,7 +30,11 @@ Open issues:
 - **Station mode connection is unreliable.** On 2026-10-18 the ESP joined the router in station mode (static IP
   and DHCP), but in earlier sessions it failed to connect and access point mode was used instead. Not explained
   yet; the disconnect log does not print the reason code, which would be the first clue.
-- Next: Tasks 11-14.
+- **Hoverboard reboot with the ESP still powered.** The mainboard counters restart at 0 and
+  `hover::TickUnwrapper` takes the jump as a real move of up to +-4500 ticks, so the odometry jumps. A hoverboard
+  power cycle also reboots the ESP (same supply), which the ROS node handles; this case needs a fix in the ESP
+  (e.g. reset the unwrapper reference when feedback resumes after a timeout). Not done yet.
+- Next: Task 14.
 
 ## Design Summary
 
@@ -3162,7 +3166,7 @@ create a new `OdometryIntegrator` reference without losing the pose, or the odom
   - LIDAR serial stream at `/tmp/ttyLIDAR`. The pty exists only inside the container running the node, so the LIDAR driver must run in that same container (Task 12 review)
   - Launch argument `esp_host`
 
-- [ ] **Step 1: Write the node**
+- [x] **Step 1: Write the node**
 
 `ros2/hoverboard_bridge/hoverboard_bridge/bridge_node.py`:
 ```python
@@ -3446,7 +3450,7 @@ if __name__ == '__main__':
     main()
 ```
 
-- [ ] **Step 2: Parameters and launch file**
+- [x] **Step 2: Parameters and launch file**
 
 `ros2/hoverboard_bridge/config/bridge.yaml` (floats must keep a decimal point, ROS2 parameter types are strict):
 ```yaml
@@ -3502,7 +3506,7 @@ def generate_launch_description():
     ])
 ```
 
-- [ ] **Step 3: Build the workspace**
+- [x] **Step 3: Build the workspace**
 
 Run (container, from `/ws`):
 ```bash
@@ -3512,7 +3516,7 @@ source install/setup.bash
 New container shells source `/ws/install/setup.bash` automatically.
 Expected: `Finished <<< hoverboard_bridge`.
 
-- [ ] **Step 4: Run without hardware**
+- [x] **Step 4: Run without hardware**
 
 Run (container): `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=127.0.0.1`
 Expected: logs `LIDAR stream at /tmp/ttyLIDAR` and `Bridging to ESP at 127.0.0.1`, with no exceptions.
@@ -3522,6 +3526,19 @@ Expected: the node lists the subscriber and publishers from the Interfaces block
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: all tests pass.
+
+Review outcome (2026-10-18): the repository version extends the code above (`18 passed`):
+- `kinematics.TickContinuity` keeps ticks continuous across ESP reboots (ESP `stamp_ms` going back by more than
+  500 ms); the node logs `ESP restarted, odometry kept continuous`.
+- Clean Ctrl+C under `ros2 launch`: SIGINT is ignored during teardown and `ExternalShutdownException` is caught;
+  the zero commands are sent before the pty is closed.
+- `BatteryState`: unknown fields are NaN, technology LION. IMU yaw variance 1e6 (yaw is not absolute); odom twist
+  vy variance 1e-3 (fuse twist, the pose covariance is constant).
+- Warnings: no telemetry ever received, hoverboard feedback missing at startup, IMU data lost.
+- `*_sign` parameters must be -1 or 1. `esp_host` is set only by the launch argument (removed from
+  `bridge.yaml`). The cmd_vel timeout and link checks use a steady clock.
+- Run checks used `ros2 launch` and a fake ESP on 127.0.0.1 inside one container (`run.sh` starts a new
+  container per call).
 
 ---
 

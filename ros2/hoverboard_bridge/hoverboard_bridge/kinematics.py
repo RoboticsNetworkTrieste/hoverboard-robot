@@ -75,3 +75,24 @@ class OdometryIntegrator:
         self.x += distance * math.cos(heading)
         self.y += distance * math.sin(heading)
         self.theta = math.atan2(math.sin(self.theta + d_theta), math.cos(self.theta + d_theta))
+
+
+class TickContinuity:
+    """Keeps cumulative ticks continuous across ESP reboots (ESP clock going backwards)."""
+
+    def __init__(self, reboot_margin_ms=500):
+        # stamp_ms wraps after ~49.7 days; a wrap would be taken as a reboot
+        self.reboot_margin_ms = reboot_margin_ms
+        self._last_stamp_ms = None
+        self._last = (0, 0)
+        self._offset = (0, 0)
+
+    def update(self, stamp_ms, ticks_l, ticks_r):
+        """Returns (continuous_l, continuous_r, rebooted)."""
+        rebooted = (self._last_stamp_ms is not None
+                    and stamp_ms < self._last_stamp_ms - self.reboot_margin_ms)
+        if rebooted:
+            self._offset = self._last  # New counters restart from 0
+        self._last_stamp_ms = stamp_ms
+        self._last = (ticks_l + self._offset[0], ticks_r + self._offset[1])
+        return self._last[0], self._last[1], rebooted

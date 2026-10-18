@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from hoverboard_bridge.kinematics import DiffDriveParams, OdometryIntegrator, twist_to_commands
+from hoverboard_bridge.kinematics import DiffDriveParams, OdometryIntegrator, TickContinuity, twist_to_commands
 
 P = DiffDriveParams(wheel_radius=0.0825, wheel_separation=0.40, ticks_per_rev=90, n_mot_max=200.0)
 
@@ -48,3 +48,23 @@ def test_saturation_keeps_curvature():
 def test_invalid_params_are_rejected():
     with pytest.raises(ValueError, match="wheel_radius"):
         DiffDriveParams(wheel_radius=0.0, wheel_separation=0.40, ticks_per_rev=90, n_mot_max=200.0)
+
+
+def test_tick_continuity_passthrough():
+    tc = TickContinuity()
+    assert tc.update(1000, 10, 20) == (10, 20, False)
+    assert tc.update(1050, 15, 25) == (15, 25, False)
+
+
+def test_tick_continuity_reboot_keeps_ticks_continuous():
+    tc = TickContinuity()
+    tc.update(59000, 400, 400)
+    assert tc.update(60000, 500, 500) == (500, 500, False)
+    assert tc.update(100, 3, 3) == (503, 503, True)
+    assert tc.update(150, 5, 4) == (505, 504, False)
+
+
+def test_tick_continuity_small_backward_step_is_not_reboot():
+    tc = TickContinuity()
+    tc.update(1000, 10, 10)
+    assert tc.update(980, 11, 11) == (11, 11, False)

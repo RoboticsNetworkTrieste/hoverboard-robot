@@ -1,0 +1,23 @@
+hoverboard_bridge:
+  ros__parameters:
+    esp_port: 8888
+    wheel_radius: 0.0825           # [m] measure and refine in Task 14
+    wheel_separation: 0.40         # [m] measure and refine in Task 14
+    ticks_per_rev: 90
+    n_mot_max: 200.0               # [rpm] must match N_MOT_MAX in firmware config.h
+    max_cmd: 1000
+    left_cmd_sign: 1
+    right_cmd_sign: 1
+    left_ticks_sign: 1             # Firmware tick counters count up when moving forward
+    right_ticks_sign: 1
+    left_rpm_sign: 1               # Right speedR_meas is negative when moving forward
+    right_rpm_sign: -1
+    cmd_rate: 20.0
+    cmd_vel_timeout: 0.5
+    link_timeout: 1.0
+    odom_frame: "odom"
+    base_frame: "base_link"
+    imu_frame: "imu_link"
+    publish_tf: true
+    enable_lidar: true
+    lidar_pty_link: "/tmp/ttyLIDAR"
