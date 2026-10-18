@@ -39,8 +39,8 @@ WT901C and level shifter HV. The level shifter LV side runs from the ESP 3V3 pin
 
 | Device | Device pin | ESP32-S3 |
 |---|---|---|
-| Hoverboard right sensor cable (USART3, 3.3V) | GND / TX / RX | GND / GPIO4 / GPIO5 direct. NEVER connect the red 15V wire |
-| WT901C (5V) | VCC / TX / RX / GND | 5V rail / shifter HV3-LV3 -> GPIO6 / GPIO9 -> shifter LV4-HV4 / GND |
+| Hoverboard right sensor cable (USART3, 3.3V) | GND / TX / RX | GND / GPIO3 / GPIO4 direct. NEVER connect the red 15V wire |
+| WT901C (5V) | VCC / TX / RX / GND | 5V rail / shifter HV3-LV3 -> GPIO5 / GPIO6 -> shifter LV4-HV4 / GND |
 | LIDAR (5V) | 5V / GND / TX / RX | 5V rail / GND / shifter HV1-LV1 -> GPIO7 / GPIO8 -> shifter LV2-HV2 |
 | MH level converter | HV / LV / GND | 5V rail / 3V3 / GND |
 | DSN-mini-360 step-down | OUT+ / OUT- | 5V / GND |
@@ -98,7 +98,7 @@ udp: Telemetry peer <PC IP>:<port>            (each time a probe starts)
 |---|---|
 | No ping reply | Wrong address, PC on another network, ESP still connecting, static IP outside the router subnet |
 | Ping works, probe shows only `no telemetry` | Wrong `--host` or port. The ESP sends telemetry only to a PC that sends wheel commands |
-| No `HOVER_OK`, `ok=0` | Hoverboard TX -> GPIO4 wire, missing common ground, hoverboard off |
-| `bad` keeps rising | Noisy line or loose contact on GPIO4, ground |
-| Hoverboard repeats 3 low beeps | Serial timeout on the mainboard: GPIO5 -> hoverboard RX wire |
+| No `HOVER_OK`, `ok=0` | Hoverboard TX -> GPIO3 wire, missing common ground, hoverboard off |
+| `bad` keeps rising | Noisy line or loose contact on GPIO3, ground |
+| Hoverboard repeats 3 low beeps | Serial timeout on the mainboard: GPIO4 -> hoverboard RX wire |
 | `HOVER_OK` but wheels do not move | `CMD_TIMEOUT` in the status (commands not reaching the ESP), or command too small |

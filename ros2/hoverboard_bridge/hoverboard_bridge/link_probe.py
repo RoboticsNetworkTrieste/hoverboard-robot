@@ -43,6 +43,9 @@ def main():
     parser.add_argument('--left', type=int, default=0, help='Left wheel command (-1000..1000)')
     parser.add_argument('--right', type=int, default=0, help='Right wheel command (-1000..1000)')
     parser.add_argument('--duration', type=float, default=5.0, help='Seconds before stopping')
+    parser.add_argument('--lidar-hex', default='',
+                        help='Hex bytes sent once to the LIDAR after the first command, '
+                             'e.g. "54 A2 04 D8 09 00 00 16" to set 7 Hz')
     args = parser.parse_args()
 
     addr = (socket.gethostbyname(args.host), args.port)
@@ -65,6 +68,9 @@ def main():
             sock.sendto(lp.encode_cmd_wheels(seq, args.left, args.right), addr)
             seq += 1
             t_cmd = now
+            if args.lidar_hex and seq == 1:
+                sock.sendto(lp.encode(lp.MSG_LIDAR_TX, seq, 0, bytes.fromhex(args.lidar_hex)), addr)
+                seq += 1
         while True:
             try:
                 data, _ = sock.recvfrom(lp.MAX_DATAGRAM)
@@ -85,6 +91,8 @@ def main():
             elif msg.type == lp.MSG_IMU:
                 imu = lp.parse_imu(msg.body)
             elif msg.type == lp.MSG_LIDAR_RX:
+                if lidar_bytes < 64:
+                    print('[lidar]', msg.body[:64 - lidar_bytes].hex(' '))
                 lidar_bytes += len(msg.body)
             elif msg.type == lp.MSG_LOG:
                 print('[esp]', msg.body.decode('ascii', errors='replace').rstrip())

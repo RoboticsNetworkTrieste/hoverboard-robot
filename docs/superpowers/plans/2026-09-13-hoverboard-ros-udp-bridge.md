@@ -12,6 +12,25 @@
 
 **Spec:** No separate spec document. The design decisions from the conversation are summarized in "Design Summary" below. Executors must read that section first.
 
+## Status and open issues (2026-10-18)
+
+Bench result: Tasks 1-7, 9 and 10 are implemented. Over the WiFi access point, all wiring is confirmed:
+hoverboard feedback and commands, WT901C IMU and LIDAR data reach the PC as UDP datagrams.
+The configuration used for that run is now the default (`Kconfig.projbuild`, `sdkconfig.defaults`):
+access point mode with placeholder SSID/password, pins as in "UART assignment", IMU enabled at 115200 baud,
+console output None, WPA3-SAE on (ESP-IDF default).
+
+Open issues:
+- **Packet loss.** Many datagrams were lost during the bench tests. Not investigated yet. The `seq` field is
+  shared by all ESP->PC messages, so gaps in it measure loss directly. Suspects: `UdpLink::send` drops silently
+  when the WiFi TX queue is full (one datagram per IMU packet plus LIDAR chunks plus 50 Hz state), RF conditions,
+  PC-side receive loop.
+- **Station mode does not connect.** The ESP no longer joins the router; earlier it connected after a few
+  disconnects. Access point mode was used as a workaround. Not investigated yet. The disconnect log does not print
+  the reason code, which would be the first clue.
+- Task 7 Step 5 (station checks), Task 9 Step 7 watchdog checks and Task 10 Step 5 (README sensor notes) still
+  to be confirmed or done; then Tasks 11-14.
+
 ## Design Summary
 
 ### Why ESP-IDF and not Arduino
@@ -29,9 +48,9 @@ WiFi (in one of its modes) and USB can be enabled together. The UDP socket liste
 ### UART assignment (ESP32-S3 has exactly 3 UARTs)
 | UART | Device | ESP pins (Kconfig defaults) | Baud |
 |---|---|---|---|
-| UART1 | Hoverboard (right sensor cable, USART3) | RX=GPIO4, TX=GPIO5 | 115200 |
+| UART1 | Hoverboard (right sensor cable, USART3) | RX=GPIO3, TX=GPIO4 | 115200 |
 | UART2 | LIDAR STL-50B2 | RX=GPIO7, TX=GPIO8 | 230400 (confirmed on the bench, see `docs/lidar/STL-50B2.md`) |
-| UART0 | WT901C IMU | RX=GPIO6, TX=GPIO9 | 9600 (WT901C default) |
+| UART0 | WT901C IMU | RX=GPIO5, TX=GPIO6 | 115200 (this unit; WT901C factory default is 9600) |
 
 ### Board and power
 The board is a Waveshare ESP32-S3-Zero. Only its edge pins are used: 5V, GND, 3V3, GPIO1-13 and GPIO43/44 (TX/RX). GPIO14-18 and GPIO38-45 are solder pads on the top and bottom faces and are not used. GPIO21 drives the on-board RGB LED.
@@ -64,12 +83,12 @@ The ESP32-S3 GPIOs are not 5V tolerant. The LIDAR and the IMU run at 5V, so thei
 
 | Signal | Direction | Level | Path |
 |---|---|---|---|
-| Hoverboard TX -> GPIO4 (UART1 RX) | mainboard -> ESP | 3.3V | direct |
-| GPIO5 (UART1 TX) -> Hoverboard RX | ESP -> mainboard | 3.3V | direct |
+| Hoverboard TX -> GPIO3 (UART1 RX) | mainboard -> ESP | 3.3V | direct |
+| GPIO4 (UART1 TX) -> Hoverboard RX | ESP -> mainboard | 3.3V | direct |
 | LIDAR TX -> GPIO7 (UART2 RX) | LIDAR -> ESP | 5V (to verify) | shifter HV1 -> LV1 |
 | GPIO8 (UART2 TX) -> LIDAR RX | ESP -> LIDAR | 3.3V -> 5V | shifter LV2 -> HV2 |
-| WT901C TX -> GPIO6 (UART0 RX) | IMU -> ESP | 5V (to verify) | shifter HV3 -> LV3 |
-| GPIO9 (UART0 TX) -> WT901C RX | ESP -> IMU | 3.3V -> 5V | shifter LV4 -> HV4 |
+| WT901C TX -> GPIO5 (UART0 RX) | IMU -> ESP | 5V (to verify) | shifter HV3 -> LV3 |
+| GPIO6 (UART0 TX) -> WT901C RX | ESP -> IMU | 3.3V -> 5V | shifter LV4 -> HV4 |
 
 Rules:
 - Trim the DSN-mini-360 output to 5.0V with a multimeter before connecting any load; the module does not ship set to 5V.
@@ -499,8 +518,8 @@ WT901C and level shifter HV. The level shifter LV side runs from the ESP 3V3 pin
 
 | Device | Device pin | ESP32-S3 |
 |---|---|---|
-| Hoverboard right sensor cable (USART3, 3.3V) | GND / TX / RX | GND / GPIO4 / GPIO5 direct. NEVER connect the red 15V wire |
-| WT901C (5V) | VCC / TX / RX / GND | 5V rail / shifter HV3-LV3 -> GPIO6 / GPIO9 -> shifter LV4-HV4 / GND |
+| Hoverboard right sensor cable (USART3, 3.3V) | GND / TX / RX | GND / GPIO3 / GPIO4 direct. NEVER connect the red 15V wire |
+| WT901C (5V) | VCC / TX / RX / GND | 5V rail / shifter HV3-LV3 -> GPIO5 / GPIO6 -> shifter LV4-HV4 / GND |
 | LIDAR (5V) | 5V / GND / TX / RX | 5V rail / GND / shifter HV1-LV1 -> GPIO7 / GPIO8 -> shifter LV2-HV2 |
 | MH level converter | HV / LV / GND | 5V rail / 3V3 / GND |
 | DSN-mini-360 step-down | OUT+ / OUT- | 5V / GND |
@@ -2794,7 +2813,7 @@ In `idf.py menuconfig`:
 
 Build and flash, then unplug the USB-C cable before powering the ESP from the step-down.
 
-Wire the WT901C as in "Electrical wiring": VCC to the 5V rail, TX through shifter HV3 -> LV3 to GPIO6, GPIO9 through shifter LV4 -> HV4 to RX. Before connecting the shifter, measure the WT901C TX idle voltage and record it in "Electrical wiring".
+Wire the WT901C as in "Electrical wiring": VCC to the 5V rail, TX through shifter HV3 -> LV3 to GPIO5, GPIO6 through shifter LV4 -> HV4 to RX. Before connecting the shifter, measure the WT901C TX idle voltage and record it in "Electrical wiring".
 
 Run: `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --duration 10`
 Expected: status lines contain `IMU_OK`, and `imu angle=(...)` changes when the IMU is tilted.

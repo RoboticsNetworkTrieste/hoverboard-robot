@@ -70,11 +70,11 @@ menu "Hoverboard ROS bridge"
 
     config HB_HOVER_RX_GPIO
         int "Hoverboard UART RX GPIO"
-        default 4
+        default 3
 
     config HB_HOVER_TX_GPIO
         int "Hoverboard UART TX GPIO"
-        default 5
+        default 4
 
     config HB_HOVER_BAUD
         int "Hoverboard UART baud (must match USART3_BAUD in firmware)"
@@ -92,19 +92,19 @@ menu "Hoverboard ROS bridge"
 
     config HB_ENABLE_IMU
         bool "Enable WT901C IMU on UART0"
-        default n
+        default y
         help
-            UART0 is also the default console. Set Component config > ESP System Settings >
-            Channel for console output = None when enabling the IMU.
+            UART0 is also the default console. Keep Component config > ESP System Settings >
+            Channel for console output = None (set in sdkconfig.defaults) while the IMU is enabled.
 
     config HB_IMU_RX_GPIO
         int "IMU UART RX GPIO"
-        default 6
+        default 5
         depends on HB_ENABLE_IMU
 
     config HB_IMU_TX_GPIO
         int "IMU UART TX GPIO"
-        default 9
+        default 6
         depends on HB_ENABLE_IMU
         help
             Wired to the WT901C RX through the level shifter. Nothing is sent yet;
@@ -112,7 +112,9 @@ menu "Hoverboard ROS bridge"
 
     config HB_IMU_BAUD
         int "IMU UART baud"
-        default 9600
+        default 115200
+        help
+            Must match the baud stored in the WT901C
         depends on HB_ENABLE_IMU
 
     config HB_ENABLE_LIDAR
