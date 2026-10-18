@@ -3551,7 +3551,7 @@ Review outcome (2026-10-18): the repository version extends the code above (`18 
 **Interfaces:**
 - Consumes: everything above, with the full robot assembled.
 
-- [ ] **Step 1: Link check over WiFi (wheels lifted)**
+- [x] **Step 1: Link check over WiFi (wheels lifted)** (2026-10-18, station 192.168.1.50: telemetry, `Hoverboard feedback OK`, `IMU data OK`, battery 41.3 V)
 
 ESP in station mode (container): `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=<HB_WIFI_STA_IP>`
 Expected: `ESP telemetry received`, `Hoverboard feedback OK`. `ros2 topic echo --once /hoverboard/battery` shows the pack voltage.
@@ -3564,12 +3564,12 @@ Expected: same result.
 Run: `ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.1}}"`
 Expected: both wheels turn in the robot's forward direction. For each wheel that turns backwards, flip its `*_cmd_sign` in `bridge.yaml`, rebuild (not needed with `--symlink-install`), relaunch and repeat.
 
-- [ ] **Step 3: Feedback signs (wheels lifted, still commanding forward)**
+- [x] **Step 3: Feedback signs (wheels lifted, still commanding forward)** (2026-10-18: `linear.x 0.1` for 5 s gave both velocities positive, both positions rising, odom x 0.48 m of 0.50 expected; default signs kept)
 
 Run: `ros2 topic echo /joint_states`
 Expected: both `velocity` values positive and both `position` values increasing. For each wheel with a negative `velocity`, flip its `*_rpm_sign`; for each wheel with a decreasing `position`, flip its `*_ticks_sign`. The defaults already match the bench result of Task 9, so no change is expected.
 
-- [ ] **Step 4: Ticks per revolution (stop the ROS node first)**
+- [x] **Step 4: Ticks per revolution (stop the ROS node first)** (2026-10-18: 92.9 left, 89.3 right at command 100 for 10 s; `ticks_per_rev` stays 90)
 
 Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host <HB_WIFI_STA_IP> --left 100 --right 100 --duration 10`
 Expected: the final lines print `ticks_per_rev~N` for both wheels. Set `ticks_per_rev` to the nearest integer (90 is expected for 15 pole-pair hub motors; the Task 9 bench run gave about 0.8 revolutions and 70-73 ticks in 5 s at 10 rpm, consistent with 90).
