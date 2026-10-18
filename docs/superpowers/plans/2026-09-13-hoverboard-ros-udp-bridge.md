@@ -3045,7 +3045,7 @@ Review outcome (2026-10-18): the repository version extends the code above, with
 **Interfaces:**
 - Produces: `class LidarPty(link_path: str)` with `write(data: bytes) -> None` (bytes from the LIDAR, for the driver), `read(max_bytes: int = 512) -> bytes` (bytes written by the driver, for the LIDAR; `b''` if none), `close() -> None`, attribute `slave_name`. Linux only.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `ros2/hoverboard_bridge/test/test_lidar_pty.py`:
 ```python
@@ -3078,12 +3078,12 @@ def test_bytes_flow_both_ways(tmp_path):
     assert not os.path.lexists(link)
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_lidar_pty.py -q`
 Expected: FAIL with `ModuleNotFoundError` for `hoverboard_bridge.lidar_pty`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `ros2/hoverboard_bridge/hoverboard_bridge/lidar_pty.py`:
 ```python
@@ -3128,10 +3128,18 @@ class LidarPty:
 
 The slave file descriptor stays open for the whole lifetime of the object. Otherwise reads on the master fail with `EIO` whenever the driver closes the port.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_lidar_pty.py -q`
 Expected: `1 passed`
+
+Review outcome (2026-10-18): the repository version hardens the code above, with 2 more tests (`3 passed`):
+- The constructor replaces only a symlink at `link_path` (a real file raises `FileExistsError`) and closes the
+  pty fds if setup fails.
+- `close()` can be called twice and removes the link only if it still points to this pty.
+- `write`/`read` swallow only `BlockingIOError`; other errors are real bugs and propagate.
+- Checked against the `ldlidar_stl_ros2` source: it opens the port non-blocking, sets 230400 with `TCSETS2`
+  (works on a pty) and flushes input on open, so data buffered before the driver starts is discarded.
 
 ---
 
@@ -3151,7 +3159,7 @@ create a new `OdometryIntegrator` reference without losing the pose, or the odom
 - Produces, ROS interfaces of node `hoverboard_bridge`:
   - Subscribes `cmd_vel` (`geometry_msgs/Twist`)
   - Publishes `odom` (`nav_msgs/Odometry`), TF `odom -> base_link`, `joint_states` (`sensor_msgs/JointState`, joints `left_wheel_joint`, `right_wheel_joint`), `imu/data` (`sensor_msgs/Imu`), `hoverboard/battery` (`sensor_msgs/BatteryState`), `hoverboard/temperature` (`sensor_msgs/Temperature`)
-  - LIDAR serial stream at `/tmp/ttyLIDAR`
+  - LIDAR serial stream at `/tmp/ttyLIDAR`. The pty exists only inside the container running the node, so the LIDAR driver must run in that same container (Task 12 review)
   - Launch argument `esp_host`
 
 - [ ] **Step 1: Write the node**
@@ -3564,7 +3572,7 @@ Relaunch and repeat both once. Expected: odom within about 5% of the real distan
 Precondition: Task 10 saw LDROBOT frames (`54 2c`).
 
 1. `ldlidar_stl_ros2` is already built in the container image (underlay `/opt/ldlidar_ws`, Task 5).
-2. In a second container shell, launch it with `port_name` set to `/tmp/ttyLIDAR` and `port_baudrate` set to `230400`, while `bridge.launch.py` is running. The driver never sends a start command of its own, which is why the ESP does it; the driver only has to parse the stream.
+2. In a shell of the same container that runs `bridge.launch.py` (`docker exec -it <container> bash`, not a second `run.sh`: each `run.sh` starts a new container with its own `/tmp` and `/dev/pts`, so the pty is not visible there), launch it with `port_name` set to `/tmp/ttyLIDAR` and `port_baudrate` set to `230400`, while `bridge.launch.py` is running. The driver never sends a start command of its own, which is why the ESP does it; the driver only has to parse the stream.
 3. Run `ros2 topic hz /scan`. Expected: a steady rate around 7 Hz, the measured rotation speed of this unit.
 
 - [ ] **Step 7: Document ROS2 usage**
