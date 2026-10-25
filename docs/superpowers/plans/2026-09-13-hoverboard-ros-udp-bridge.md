@@ -26,6 +26,9 @@ Open issues:
   then 3-4 s at ~50%); `CMD_TIMEOUT` set in 67% of `WHEEL_STATE` (PC->ESP commands lost too); ping 15% lost with
   RTT up to 1.7 s; repeated `ba-add`/`ba-del` in the ESP WiFi log. Received data is intact (0 LIDAR CRC errors,
   0 bad hoverboard frames). Conclusion so far: RF link, most likely ESP <-> router, not the ESP send queue.
+  USB tethering (2026-10-25, WiFi off, same 20 s test with hoverboard, IMU and LIDAR connected): 3000 datagrams
+  at 150 msg/s, 0 lost, `CMD_TIMEOUT` in 0 of 1000 `WHEEL_STATE`, ping 0% lost at ~2.3 ms. The bridge loop and the
+  send path keep up, so the WiFi loss is in the radio link.
   Still to compare: access point mode (one hop), PC on Ethernet, ESP closer to the router.
 - **Station mode connection is unreliable.** On 2026-10-18 the ESP joined the router in station mode (static IP
   and DHCP), but in earlier sessions it failed to connect and access point mode was used instead. Not explained
@@ -3626,7 +3629,7 @@ Start only after Task 14 passes over WiFi. Task 9 builds `main.cpp` and `CMakeLi
 
 Reference implementations to cross-check if the `esp_tinyusb` 1.x API differs in the resolved version: `esp-idf/examples/peripherals/usb/device/tusb_ncm` and `github.com/esp32-open-source/usb-netif-example`.
 
-- [ ] **Step 1: Implement the USB network interface**
+- [x] **Step 1: Implement the USB network interface**
 
 `main/net_usb.h`:
 ```cpp
@@ -3724,7 +3727,7 @@ esp_err_t usb_net_start()
 }
 ```
 
-- [ ] **Step 2: Call it from main**
+- [x] **Step 2: Call it from main**
 
 In `main/main.cpp` (final version from Task 9) add `#include "net_usb.h"` next to `#include "net_wifi.h"`, and add before the `#ifndef CONFIG_HB_WIFI_MODE_OFF` block:
 ```cpp
@@ -3735,12 +3738,12 @@ In `main/main.cpp` (final version from Task 9) add `#include "net_usb.h"` next t
 
 In `main/CMakeLists.txt` add `"net_usb.cpp"` to `SRCS`.
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build** (2026-10-25: builds with `HB_USB_NET` off and on, `esp_tinyusb` 1.7.6)
 
 Run: `idf.py build`
 Expected: build succeeds. If `tinyusb_net.h` is not found, run `idf.py menuconfig` and check that Component config > TinyUSB Stack > Network driver is NCM, then build again.
 
-- [ ] **Step 4: Hardware check (needs the ESP32-S3; ask the user before flashing)**
+- [x] **Step 4: Hardware check (needs the ESP32-S3; ask the user before flashing)** (2026-10-25, WiFi off, USB only: `enx024842000702` got `192.168.7.2/24`, no default route, ping ~2.3 ms; `link_probe` shows `HOVER_OK IMU_OK`, battery 41.2 V, LIDAR frames `54 2c`)
 
 In `idf.py menuconfig` enable Hoverboard ROS bridge > Enable USB tethering (off by default). Disconnect the step-down from the ESP 5V pin, then put the board in download mode (hold BOOT, press and release RESET, release BOOT), run `idf.py -p /dev/ttyACM0 flash`, then press RESET. The same USB-C port now enumerates as a network device; no monitor is available on it.
 

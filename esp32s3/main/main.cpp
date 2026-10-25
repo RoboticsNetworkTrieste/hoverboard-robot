@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "log_forward.h"
+#include "net_usb.h"
 #include "net_wifi.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
@@ -26,6 +27,9 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
+#ifdef CONFIG_HB_USB_NET
+    ESP_ERROR_CHECK(usb_net_start());
+#endif
 #ifndef CONFIG_HB_WIFI_MODE_OFF
     ESP_ERROR_CHECK(wifi_start());
 #endif

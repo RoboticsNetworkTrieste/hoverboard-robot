@@ -10,6 +10,9 @@
 #include "mdns.h"
 #include "sdkconfig.h"
 
+// The WiFi Kconfig symbols do not exist with WiFi off; wifi_start() is then never called.
+#ifndef CONFIG_HB_WIFI_MODE_OFF
+
 static const char* TAG = "wifi";
 
 #ifdef CONFIG_HB_WIFI_STA_STATIC_IP
@@ -96,3 +99,5 @@ esp_err_t wifi_start()
     ESP_LOGI(TAG, "WiFi started, mDNS name %s.local", CONFIG_HB_HOSTNAME);
     return ESP_OK;
 }
+
+#endif  // CONFIG_HB_WIFI_MODE_OFF
