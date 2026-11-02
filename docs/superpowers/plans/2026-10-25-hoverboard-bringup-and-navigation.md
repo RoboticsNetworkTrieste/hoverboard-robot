@@ -33,7 +33,7 @@ Open issues carried into this plan:
 - **Station mode does not always connect.** The disconnect log does not print the reason code yet. Tasks 3 and 4.
 - **`bridge_node` has no automated tests.** Task 5.
 - **Resoldered hoverboard TX -> GPIO7 line.** It was found open circuit after the assembly and then repaired. Check that `bad` in `link_probe` stays steady after the first floor runs (Task 1).
-- **Backward beep during turns in place.** Irregular beeps while rotating, most likely `BEEPS_BACKWARD` in the mainboard firmware (`Src/main.c`: a wheel command below -50 with negative mean speed; at 0.5 rad/s the inner wheel command is about -53). The user wants it removed: set `BEEPS_BACKWARD` to 0 in `hoverboard/config.patch` and reflash the mainboard. Not done yet; it changes the mainboard firmware, which this plan otherwise leaves alone.
+- **Backward beep during turns in place.** Irregular beeps while rotating, most likely `BEEPS_BACKWARD` in the mainboard firmware (`Src/main.c`: a wheel command below -50 with negative mean speed; at 0.5 rad/s the inner wheel command is about -53). The user wants it removed: `BEEPS_BACKWARD` is 0 in `hoverboard/config.patch`, but the mainboard has not been reflashed yet, so it still beeps. This is the only mainboard firmware change in this plan.
 
 ## Context
 
@@ -793,7 +793,7 @@ Result (2026-11-02): `360 3` as expected. Added beyond this plan: the driver can
 - Create: `ros2/hoverboard_bringup/launch/robot.launch.py`
 - Modify: `ros2/hoverboard_bridge/launch/bridge.launch.py`
 
-- [ ] **Step 1: Measure the robot**
+- [x] **Step 1: Measure the robot**
 
 Measure from `base_link` (floor, midway between the wheel contact points, x forward, y left, z up), in metres:
 
@@ -814,7 +814,7 @@ Measured (2026-11-02):
 - A caster sits under the front of the board, on the centre line.
 - Footprint: front 0.47, rear 0.135 (tyre radius, slightly more than the 0.12 of the board), left 0.33, right 0.33.
 
-- [ ] **Step 2: Package files**
+- [x] **Step 2: Package files**
 
 Create `ros2/hoverboard_bringup/CMakeLists.txt`:
 ```cmake
@@ -858,7 +858,7 @@ Create `ros2/hoverboard_bringup/package.xml`:
 </package>
 ```
 
-- [ ] **Step 3: URDF**
+- [x] **Step 3: URDF**
 
 Create `ros2/hoverboard_bringup/urdf/hoverboard.urdf` (wheel radius and separation must match `bridge.yaml`):
 ```xml
@@ -920,7 +920,7 @@ Create `ros2/hoverboard_bringup/urdf/hoverboard.urdf` (wheel radius and separati
 </robot>
 ```
 
-- [ ] **Step 4: LIDAR configuration and launch files**
+- [x] **Step 4: LIDAR configuration and launch files**
 
 Create `ros2/hoverboard_bringup/config/lidar.yaml` (use the `product_name` that worked in Task 1 Step 5):
 ```yaml
@@ -987,13 +987,15 @@ def generate_launch_description():
     ])
 ```
 
-- [ ] **Step 5: Build and run without hardware**
+- [x] **Step 5: Build and run without hardware**
 
 Run (container, from `/ws`): `colcon build --symlink-install && source install/setup.bash`
 Expected: `Finished <<< hoverboard_bridge` and `Finished <<< hoverboard_bringup`.
 
 Run (container): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=127.0.0.1`
 Expected: `Bridging to ESP at 127.0.0.1`, `robot_state_publisher` lists the links, the LIDAR node starts (it waits for data), no exception. In a second container shell: `ros2 run tf2_ros tf2_echo base_link laser_link` prints the URDF offset.
+
+Result (2026-11-02): both packages build, all four nodes run, `tf2_echo` gives the measured offsets (`laser_link` 0.225, 0, 0.21, yaw 90 deg). The URDF and `lidar.yaml` use the Step 1 values, plus `excluded_sectors_deg` for the wheels. Without data the LIDAR node does not wait: it exits about every 5 s with `communication is abnormal` and is respawned. This is harmless with no ESP connected.
 
 - [ ] **Step 6: Hardware check: TF tree, LIDAR and IMU orientation (robot on the floor)**
 
@@ -1002,7 +1004,7 @@ Run (container, second shell): `rviz2 -d /opt/ros/humble/share/nav2_bringup/rviz
 Checks:
 1. `ros2 run tf2_tools view_frames` (container, writes `frames.pdf`): `odom -> base_link -> {chassis_link, laser_link, imu_link, left_wheel_link, right_wheel_link}`.
 2. Place a box about 1 m straight in front of the robot. Expected: the scan shows it on the +x axis of `base_link`. If it appears elsewhere, set the yaw of `laser_joint` (`rpy="0 0 <yaw>"`, radians) to rotate it onto +x; if it appears mirrored (left and right swapped), set `laser_scan_dir: false`. Relaunch and repeat.
-3. Points that fall on the robot itself (a ring very close to the LIDAR, or fixed points on chassis parts): mask their angle range with `enable_angle_crop_func: true` and `angle_crop_min`/`angle_crop_max` (degrees, in the LIDAR's own frame).
+3. Points that fall on the robot itself (a ring very close to the LIDAR, or fixed points on chassis parts): mask their angle range with `excluded_sectors_deg` of `scan_resampler` in `config/lidar.yaml` (degrees, in the LIDAR's own frame). The driver crop allows only one range, and the wheels need two.
 4. Rotate the robot counterclockwise seen from above (`ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}"`) and watch `ros2 topic echo /imu/data --field angular_velocity`. Expected: `z` positive. With the robot still, `linear_acceleration.z` is about +9.8. If not, set the `imu_joint` `rpy` so the IMU axes map onto `base_link` (for example `rpy="3.1416 0 0"` for a board mounted upside down), relaunch and repeat.
 
 ---

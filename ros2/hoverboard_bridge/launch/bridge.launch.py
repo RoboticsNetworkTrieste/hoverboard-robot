@@ -12,11 +12,14 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('esp_host', default_value='192.168.1.50',
                               description='WiFi STA static IP (192.168.1.50), WiFi AP 192.168.4.1, USB 192.168.7.1'),
+        DeclareLaunchArgument('publish_tf', default_value='true',
+                              description='Publish odom -> base_link (false when an EKF does it)'),
         Node(
             package='hoverboard_bridge',
             executable='bridge_node',
             name='hoverboard_bridge',
             output='screen',
-            parameters=[params, {'esp_host': LaunchConfiguration('esp_host')}],
+            parameters=[params, {'esp_host': LaunchConfiguration('esp_host'),
+                                 'publish_tf': LaunchConfiguration('publish_tf')}],
         ),
     ])

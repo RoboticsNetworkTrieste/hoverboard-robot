@@ -1,0 +1,16 @@
+ldlidar:
+  ros__parameters:
+    product_name: "LDLiDAR_LD19"
+    topic_name: "scan"
+    frame_id: "laser_link"
+    port_name: "/tmp/ttyLIDAR"     # Pseudo terminal created by hoverboard_bridge
+    port_baudrate: 230400
+    laser_scan_dir: true           # Counterclockwise, as ROS expects
+    enable_angle_crop_func: false  # Only one range: the wheels are masked in scan_resampler instead
+    angle_crop_min: 135.0
+    angle_crop_max: 225.0
+
+scan_resampler:
+  ros__parameters:
+    beams: 360
+    excluded_sectors_deg: [20.0, 50.0, 130.0, 160.0]  # The two wheels, LIDAR frame
