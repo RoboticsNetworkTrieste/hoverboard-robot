@@ -8,6 +8,8 @@ ARG LDLIDAR_REF=bf668a8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git python3-pytest python3-colcon-common-extensions iproute2 iputils-ping \
+        ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-slam-toolbox \
+        ros-humble-robot-localization ros-humble-teleop-twist-keyboard \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid ${USER_GID} ${USERNAME} \

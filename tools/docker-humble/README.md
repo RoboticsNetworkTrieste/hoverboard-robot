@@ -13,6 +13,17 @@ tools/docker-humble/run.sh <command>   # one command, e.g. ros2 topic list
 - Host networking: the container reaches the ESP at the same addresses as the host
   (192.168.7.1 over USB, 192.168.4.1 on the ESP access point, the static IP from menuconfig in
   station mode). `hoverboard.local` does not resolve inside the container: use the IP.
-- `ldlidar_stl_ros2` is prebuilt in the image.
+- `ldlidar_stl_ros2` is prebuilt in the image; Nav2, `slam_toolbox`, `robot_localization` and
+  `teleop_twist_keyboard` are installed from the ROS2 apt repository.
 - GUI tools (`rviz2`): run `xhost +local:` on the host once per login session.
 - Every shell opened with `run.sh` is a new container; several can run at the same time and see each other's topics.
+
+## Manual driving
+
+```
+tools/docker-humble/teleop_debug.sh [esp_host]   # default 192.168.7.1 (USB)
+```
+
+Builds the workspace, then starts the bridge, the LIDAR driver and RViz in the background and keyboard teleop in the
+terminal. Keep the keyboard focus on the terminal, not on RViz. Ctrl-C closes everything; logs are in
+`/ws/log/teleop_debug/`.

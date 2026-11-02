@@ -1,8 +1,8 @@
 hoverboard_bridge:
   ros__parameters:
     esp_port: 8888
-    wheel_radius: 0.0825           # [m] measure and refine in Task 14
-    wheel_separation: 0.40         # [m] measure and refine in Task 14
+    wheel_radius: 0.132            # [m] calibrated on the floor (straight run)
+    wheel_separation: 0.597        # [m] calibrated on the floor (one turn in place)
     ticks_per_rev: 90
     n_mot_max: 200.0               # [rpm] must match N_MOT_MAX in firmware config.h
     max_cmd: 1000

@@ -12,9 +12,14 @@ This plan replaces `2026-09-13-hoverboard-ros-udp-bridge.md`, whose completed ta
 
 ---
 
-## Status (2026-10-25)
+## Status (2026-11-02)
 
 Done and verified on the hardware:
+- Final assembly: all components mounted, all links checked over USB tethering with `link_probe` (0 datagrams lost,
+  `HOVER_OK` at 99 frames/s, LIDAR at 7 Hz with 0 CRC errors, motors and hall sensors on both sides).
+  ESP pins: hoverboard RX/TX GPIO7/8 direct, WT901C RX/TX GPIO9/10 direct (3.3V UART), LIDAR RX/TX GPIO5/6 through
+  shifter channels 3 (LIDAR TX) and 4 (LIDAR RX). The ESP -> WT901C line is wired but unused, so it is untested.
+- WT901C output rate set to 50 Hz and saved in the sensor (still 50 Hz after a power cycle, 50 messages/s through the ESP).
 - ESP firmware: hoverboard UART protocol, UDP link, command watchdog, WT901C IMU, LIDAR start-up and streaming,
   log forwarding. WiFi access point, WiFi station (static IP or DHCP) with mDNS, USB tethering (CDC-NCM).
 - ROS2 package `hoverboard_bridge`: link protocol, kinematics, IMU conversion, LIDAR pseudo terminal, bridge node,
@@ -26,11 +31,14 @@ Open issues carried into this plan:
 - **Packet loss over WiFi** (station mode: 13.5% of ESP->PC datagrams lost, in bursts; `CMD_TIMEOUT` in 67% of
   `WHEEL_STATE`). The bridge loop keeps up (USB shows no loss), so the loss is in the radio link. Task 4.
 - **Station mode does not always connect.** The disconnect log does not print the reason code yet. Tasks 3 and 4.
-- **Hoverboard reboot with the ESP still powered** makes the odometry jump by up to +-4500 ticks. Task 2.
-- **UART levels of the LIDAR and IMU TX lines** are not measured yet (LIDAR 5V behind a level shifter, IMU 3.3V wired directly). Task 1.
 - **`bridge_node` has no automated tests.** Task 5.
+- **Resoldered hoverboard TX -> GPIO7 line.** It was found open circuit after the assembly and then repaired. Check that `bad` in `link_probe` stays steady after the first floor runs (Task 1).
+- **Backward beep during turns in place.** Irregular beeps while rotating, most likely `BEEPS_BACKWARD` in the mainboard firmware (`Src/main.c`: a wheel command below -50 with negative mean speed; at 0.5 rad/s the inner wheel command is about -53). The user wants it removed: set `BEEPS_BACKWARD` to 0 in `hoverboard/config.patch` and reflash the mainboard. Not done yet; it changes the mainboard firmware, which this plan otherwise leaves alone.
 
 ## Context
+
+### Target deployment (decided 2026-11-02)
+The final robot carries a Pocophone F1 (6 GB RAM) running postmarketOS, with all the ROS2 nodes in the Ubuntu 22.04 container, connected to the ESP by USB tethering (`192.168.7.1`). The ESP connectivity code stays as it is: WiFi station and access point remain available, but the robot as mounted uses tethering. The phone setup runs in parallel in `2026-11-02-pocophone-onboard-computer.md`; if its gates fail, another on-board computer takes its place and works like the development PC. The ROS2 tasks of this plan run on the development PC, with USB tethering for the floor tests because of the WiFi packet loss listed above.
 
 ### Transports and addresses
 | Medium | ESP address | Notes |
@@ -132,20 +140,24 @@ tools/docker-humble/Dockerfile                                modify: navigation
 - Modify: `ros2/hoverboard_bridge/config/bridge.yaml` (calibrated values)
 
 **Interfaces:**
-- Consumes: the full robot assembled, ESP in station mode at `<ESP>` (or any transport from "Transports and addresses").
+- Consumes: the full robot assembled, ESP at `<ESP>`: USB tethering (`192.168.7.1`) for floor tests, see "Target deployment".
 
-- [ ] **Step 1: Command signs (wheels lifted)**
+- [x] **Step 1: Command signs (wheels lifted)**
 
 Run (container, terminal 1): `ros2 launch hoverboard_bridge bridge.launch.py esp_host:=<ESP>`
 Run (container, terminal 2): `ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.1}}"`
 Expected: both wheels turn in the robot's forward direction. For each wheel that turns backwards, flip its `*_cmd_sign` in `bridge.yaml` and relaunch (no rebuild needed with `--symlink-install`). The feedback check of 2026-10-18 already gave positive velocities with these signs, so no change is expected.
 
-- [ ] **Step 2: Measure the UART levels of the LIDAR and the IMU**
+Result (2026-11-02): both wheels turn forward, no sign changed. Odom over 8 s at 0.1 m/s: x = 0.778 m, y = -0.001 m. `link_probe --left 100 --right 100 --duration 5`: `ticks_per_rev` about 94.6 left and 89.8 right, value 90 kept.
+
+- [x] **Step 2: Measure the UART levels of the LIDAR and the IMU**
 
 With everything powered and idle, measure with a multimeter, against GND, the LIDAR TX on the high-voltage side of the level shifter (HV3), then on the matching low-voltage side (LV3), then the WT901C TX at the ESP (GPIO9, wired directly).
 Expected: HV3 about 5V or 3.3V, LV3 and GPIO9 about 3.3V and never above 3.6V. Report the three readings; they go into the "Wiring" section of `esp32s3/README.md` in Task 12. If the LV3 or GPIO9 reading is above 3.6V, stop and disconnect that line: the ESP GPIO is not 5V tolerant.
 
-- [ ] **Step 3: Wheel radius (robot on the floor)**
+Result (2026-11-02), multimeter: HV3 about 2.8V, LV3 about 1.9V (LIDAR streaming, so these are averages with the same ratio on both sides), HV4 5V, LV4 3.3V, WT901C TX at most 3.3V. The LV3 peak was not measured (no oscilloscope); the LIDAR runs with 0 CRC errors.
+
+- [x] **Step 3: Wheel radius (robot on the floor)**
 
 Mark the start, then drive straight for about 2 m:
 Run (container, terminal 2): `ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.2}}"`, stop with Ctrl+C at about 2 m.
@@ -153,7 +165,9 @@ Read `ros2 topic echo --once /odom --field pose.pose.position` and measure the r
 Set `wheel_radius_new = wheel_radius_old * real_distance / odom_distance` in `bridge.yaml`, relaunch the bridge (odometry restarts from 0) and repeat once.
 Expected: odom within 5% of the real distance.
 
-- [ ] **Step 4: Wheel separation (robot on the floor)**
+Result (2026-11-02): with `wheel_radius = 0.0825` the robot moved about 1.6 times faster than commanded (0.974 m odom, 1.56 m real); the wheels are about 27 cm in diameter. New value `wheel_radius = 0.132`, check run 1.536 m odom, 1.50 m real (2.5%). The robot weaves by a few degrees, mostly at start-up; gyro and odometry agree, so the rotations are real. Cause not investigated. The WT901C absolute yaw kept creeping at standstill after the run (about 2.4 deg in 3 s) while the gyro and the odometry stayed still.
+
+- [x] **Step 4: Wheel separation (robot on the floor)**
 
 Mark the robot heading on the floor (tape along the chassis edge). Rotate in place for one full turn:
 `ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}"`, stop with Ctrl+C when the robot is back on the mark.
@@ -168,13 +182,15 @@ The real rotation is 360 deg; the odom rotation is `360 + printed_angle` (a nega
 Set `wheel_separation_new = wheel_separation_old * odom_angle / real_angle` in `bridge.yaml` and repeat once.
 Expected: odom within 5% (18 deg) of the real rotation.
 
+Result (2026-11-02): measured contact point distance 0.585 m, set as `wheel_separation`. One timed turn at 0.5 rad/s: real about 360 deg (no visible angle error, centre moved about 2 cm forward and 1 cm right), odom 367.3 deg (2%), integrated gyro 358.6 deg. The formula gives `wheel_separation = 0.597`, the value now in `bridge.yaml`.
+
 Update the comments of both values in `bridge.yaml`:
 ```yaml
     wheel_radius: <value>          # [m] calibrated on the floor (2 m straight run)
     wheel_separation: <value>      # [m] calibrated on the floor (one turn in place)
 ```
 
-- [ ] **Step 5: LIDAR driver on the pseudo terminal**
+- [x] **Step 5: LIDAR driver on the pseudo terminal**
 
 With the bridge running (terminal 1), open a shell in the same container: `docker ps` to get its name, then `docker exec -it <container> bash` and `source /opt/hoverboard/ros_env.sh`. Run:
 ```bash
@@ -196,9 +212,13 @@ rclpy.spin(n)"
 ```
 Expected: a count that changes from scan to scan (the driver publishes one beam per measured point). This is why Task 7 resamples the scan for `slam_toolbox`. Report the range of counts.
 
+Result (2026-11-02): `product_name:=LDLiDAR_LD19` works, `/scan` at 7.0 Hz (intervals 0.1 to 0.2 s), 617 to 620 beams per scan, 557 to 588 of them valid, ranges 0.29 to 5.39 m with the robot standing still.
+
 ---
 
-### Task 2: Odometry continuity across a hoverboard reboot (ESP)
+### Task 2 (dropped): Odometry continuity across a hoverboard reboot (ESP)
+
+Dropped on 2026-11-02, do not execute: all the electronics are powered by the hoverboard, so when it switches off or reboots the rest goes down with it.
 
 When the mainboard reboots while the ESP stays powered, the firmware counters restart from 0 and `hover::TickUnwrapper` takes the jump as a real move. Fix: when hoverboard feedback resumes after a gap of at least `kFreshMs` (500 ms), the next raw value becomes the new reference and the cumulative total is kept.
 
@@ -378,14 +398,14 @@ Expected: build succeeds with no new warnings.
 
 ---
 
-### Task 4: WiFi link comparison and choice of the navigation link (hardware)
+### Task 4 (optional): WiFi link comparison (hardware)
 
-Navigation needs a link without bursts of loss: Nav2 stops the robot when `/cmd_vel` or TF data arrive late, and the ESP watchdog stops the wheels after 300 ms without commands. This task measures the WiFi options and records which link the navigation tasks use.
+Navigation needs a link without bursts of loss: Nav2 stops the robot when `/cmd_vel` or TF data arrive late, and the ESP watchdog stops the wheels after 300 ms without commands. The robot uses USB tethering (see "Target deployment"), so no later task depends on this one. It only measures how usable the WiFi options are for bench work.
 
 **Files:**
 - Modify: `esp32s3/README.md` (new section "Link results")
 
-- [ ] **Step 1: Flash the Task 2 and Task 3 firmware (ask the user before flashing)**
+- [ ] **Step 1: Flash the Task 3 firmware (ask the user before flashing)**
 
 Station mode with the usual credentials. Expected: the probe shows `[esp] ... Station IP 192.168.1.50, channel N, rssi R`. The ESP log queue is sent once the PC has sent a command, so the line appears at the start of the first probe run.
 
@@ -411,7 +431,7 @@ Row F targets the repeated `ba-add`/`ba-del` seen in the ESP log: these are bloc
 Station mode, best configuration so far. Power cycle the robot 10 times, waiting 20 s each time, and run `python3 -m hoverboard_bridge.link_probe --host <ESP> --duration 3 | grep -E "wifi|Station|telemetry"` after each boot.
 Expected: telemetry after every boot. For each failed join, note the `reason` printed by the next successful connection's log backlog, or, with the ESP on the USB serial console (`idf.py monitor`, only with `HB_USB_NET` off and console set back to USB Serial/JTAG in menuconfig), the live disconnect lines.
 
-- [ ] **Step 4: Record the results and the decision**
+- [ ] **Step 4: Record the results**
 
 Append to `esp32s3/README.md`:
 ````markdown
@@ -425,10 +445,9 @@ Measured with `link_probe --duration 30`, hoverboard, IMU and LIDAR connected, w
 | <one row per configuration measured in Step 2> | | | | |
 
 Station joins: <successful>/10, disconnect reasons: <codes>.
-Navigation link: <chosen configuration>.
 ````
 
-Decision rule: a WiFi configuration is good enough for navigation when, at the far end of the driving area, it loses less than 1% of the datagrams and shows no `CMD_TIMEOUT`. If none is, the navigation tasks use USB tethering with the ROS2 PC (a laptop or a single-board computer running the same container) carried on the robot; the ESP side needs no change. Report the decision to the user before Task 9.
+Reference for reading the results: a WiFi configuration is good enough for driving when, at the far end of the driving area, it loses less than 1% of the datagrams and shows no `CMD_TIMEOUT`.
 
 ---
 
@@ -439,7 +458,7 @@ Decision rule: a WiFi configuration is good enough for navigation when, at the f
 
 These tests start the real `BridgeNode` with `esp_host` = `127.0.0.1` and a UDP socket in the test playing the ESP. They need `rclpy`, so they run in the container and are skipped elsewhere.
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 Create `ros2/hoverboard_bridge/test/test_bridge_node.py`:
 ```python
@@ -555,13 +574,15 @@ def test_wheel_state_becomes_odometry(bridge, esp):
     assert odoms[-1].pose.pose.position.x == pytest.approx(2 * math.pi * 0.0825)
 ```
 
-- [ ] **Step 2: Run the tests**
+- [x] **Step 2: Run the tests**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: all tests pass (`23 passed`). These tests cover existing behaviour, so they are expected to pass at once; to see that they can fail, temporarily set `'cmd_vel_timeout': 5.0` in the `defaults` of `bridge_node.py`, run again (expected: `test_commands_stop_after_cmd_vel_timeout` fails), then restore `0.5`.
 
 Run (host, from `ros2/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: the bridge node tests are reported as skipped, the others pass.
+
+Result (2026-11-02): 21 passed in the container (18 existing + 3 new, not 23), 18 passed and 1 skipped module on the host. With `cmd_vel_timeout` at 5.0 only `test_commands_stop_after_cmd_vel_timeout` fails. Run these tests with a dedicated `ROS_DOMAIN_ID` (for example `-e ROS_DOMAIN_ID=77`): they publish on `/cmd_vel` and would move the robot if a real bridge shared the domain.
 
 ---
 
@@ -571,7 +592,7 @@ Expected: the bridge node tests are reported as skipped, the others pass.
 - Modify: `tools/docker-humble/Dockerfile`
 - Modify: `tools/docker-humble/README.md`
 
-- [ ] **Step 1: Add the packages**
+- [x] **Step 1: Add the packages**
 
 In `tools/docker-humble/Dockerfile`, replace the first `apt-get install` block with:
 ```dockerfile
@@ -582,12 +603,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 ```
 
-- [ ] **Step 2: Rebuild and check**
+- [x] **Step 2: Rebuild and check**
 
 Run (host): `tools/docker-humble/run.sh --build ros2 pkg list | grep -E "^(nav2_bringup|slam_toolbox|robot_localization|teleop_twist_keyboard)$"`
 Expected: the four package names.
 
-- [ ] **Step 3: Document**
+- [x] **Step 3: Document**
 
 In `tools/docker-humble/README.md`, replace the line ``- `ldlidar_stl_ros2` is prebuilt in the image.`` with:
 ```markdown
@@ -607,7 +628,7 @@ In `tools/docker-humble/README.md`, replace the line ``- `ldlidar_stl_ros2` is p
 - Modify: `ros2/hoverboard_bridge/setup.py`
 - Test: `ros2/hoverboard_bridge/test/test_scan_resample.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `ros2/hoverboard_bridge/test/test_scan_resample.py`:
 ```python
@@ -636,12 +657,12 @@ def test_output_size_does_not_depend_on_input_size():
         assert all(r == 1.0 for r in out)  # Input denser than the output: every sector filled
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_scan_resample.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'hoverboard_bridge.scan_resample'`.
 
-- [ ] **Step 3: Implement the resampling**
+- [x] **Step 3: Implement the resampling**
 
 Create `ros2/hoverboard_bridge/hoverboard_bridge/scan_resample.py`:
 ```python
@@ -665,12 +686,12 @@ def resample(angle_min, angle_increment, ranges, range_min, range_max, beams):
     return out
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: all tests pass (`26 passed`).
 
-- [ ] **Step 5: Write the node**
+- [x] **Step 5: Write the node**
 
 Create `ros2/hoverboard_bridge/hoverboard_bridge/scan_resampler_node.py`:
 ```python
@@ -732,7 +753,7 @@ In `ros2/hoverboard_bridge/setup.py`, extend `console_scripts`:
         ],
 ```
 
-- [ ] **Step 6: Build and smoke test without hardware**
+- [x] **Step 6: Build and smoke test without hardware**
 
 Run (container, from `/ws`): `colcon build --symlink-install --packages-select hoverboard_bridge && source install/setup.bash`
 Expected: `Finished <<< hoverboard_bridge`.
@@ -758,6 +779,8 @@ rclpy.spin(n)"
 ```
 Expected: `360 3` (360 beams, three of them finite).
 
+Result (2026-11-02): `360 3` as expected. Added beyond this plan: the driver can mask only one angle range, but the wheels occupy two, so `resample()` takes `excluded` sectors and the node has the parameter `excluded_sectors_deg` (flat `[min, max, ...]` in degrees within [-180, 180), LIDAR frame, empty by default). With `[50.0, 60.0]` the smoke test gives `360 2`. 2 extra tests, 26 passed in the container. The robot values `[20.0, 50.0, 130.0, 160.0]` go into `config/lidar.yaml` in Task 8 and are checked on the hardware there.
+
 ---
 
 ### Task 8: `hoverboard_bringup` package: robot description and robot launch
@@ -782,6 +805,14 @@ Measure from `base_link` (floor, midway between the wheel contact points, x forw
 | IMU board centre: x, y, z | URDF `imu_joint` | 0.0, 0.0, 0.10 |
 
 Replace the initial values in the files below with the measured ones. The LIDAR and IMU orientations are checked in Step 6.
+
+Measured (2026-11-02):
+- Chassis board, seen from above: length 0.59, width 0.30, centred on y, rear edge at x = -0.12, so front edge at x = 0.47 and centre at x = 0.175. Top surface at z = 0.10. The chassis box is visual only, so its height needs no precision.
+- LIDAR: x = 0.225, y = 0, z = 0.21 (mirror 0.11 above the board). Its scan plane passes above the hoverboard body, but the wheels reach into it. Yaw = +90 deg, `rpy="0 0 1.5708"` (LIDAR x points to the robot's left), `laser_scan_dir: true`. Wall test: 1.058 m from the LIDAR against 1.06 m by tape, wall normal at -89.7 deg in the LIDAR frame; a box on the robot's left confirmed the scan is not mirrored. The wheels show up at about 20..50 and 130..160 deg in the LIDAR frame, minimum range 0.29 m.
+- IMU: x = 0.10, y = 0, z = 0.11. Board axes: x forward, y left.
+- Wheels: `wheel_separation` 0.597 in `bridge.yaml`, 0.66 across the outer sides, diameter about 0.27. In the URDF use radius 0.132 and joints at y = +-0.2985.
+- A caster sits under the front of the board, on the centre line.
+- Footprint: front 0.47, rear 0.135 (tyre radius, slightly more than the 0.12 of the board), left 0.33, right 0.33.
 
 - [ ] **Step 2: Package files**
 
@@ -987,7 +1018,7 @@ The wheels slip when the robot turns in place, so the wheel yaw rate is the weak
 - [ ] **Step 1: IMU rate**
 
 Run (container): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP>`, then in a second shell `ros2 topic hz /imu/data`.
-Expected: 20 Hz or more. If it is lower (the WT901C ships at 10 Hz), set the WT901C output rate to 50 Hz with the WitMotion configuration tool and a USB-serial adapter on the IMU (the ESP does not forward IMU commands), then repeat. Report the rate.
+Expected: about 50 Hz, the rate saved in the WT901C on 2026-11-02 (measured through the ESP, not yet on `/imu/data`). If it is lower, set it again with a USB-serial adapter at 3.3V on the IMU, with the IMU disconnected from GPIO9/10 (the ESP does not forward IMU commands). At 115200 baud send `FF AA 69 88 B5` (unlock), `FF AA 03 08 00` (50 Hz), `FF AA 00 00 00` (save), then repeat. Report the rate.
 
 - [ ] **Step 2: EKF configuration**
 
@@ -1096,7 +1127,7 @@ Expected: the `/odometry/filtered` yaw error is not larger than the `/odom` erro
 - Create: `ros2/hoverboard_bringup/launch/slam.launch.py`
 - Modify: `.gitignore`
 
-Precondition: the navigation link chosen in Task 4.
+Precondition: the robot linked by USB tethering (see "Target deployment").
 
 - [ ] **Step 1: Configuration**
 
@@ -1584,7 +1615,7 @@ Run (container, terminal 1): `ros2 launch hoverboard_bringup robot.launch.py esp
 Run (container, terminal 2): `ros2 launch hoverboard_bringup nav.launch.py`
 Run (container, terminal 3): `rviz2 -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz`
 Send a goal 2 m away with "Nav2 Goal" in RViz, then one behind an obstacle.
-Expected: a path appears, the robot follows it at up to 0.3 m/s, stops within 0.15 m of the goal, and goes around the obstacle. Pull the WiFi or stop terminal 1 during a run once: the robot stops within 1 s (bridge, ESP and mainboard watchdogs).
+Expected: a path appears, the robot follows it at up to 0.3 m/s, stops within 0.15 m of the goal, and goes around the obstacle. Pull the USB cable or stop terminal 1 during a run once: the robot stops within 1 s (bridge, ESP and mainboard watchdogs).
 
 - [ ] **Step 6: Navigate on a saved map (robot on the floor)**
 
@@ -1606,7 +1637,7 @@ Write the values changed while testing (footprint, speeds, inflation, AMCL, `sla
 
 - [ ] **Step 1: ROS2 README**
 
-Replace `ros2/README.md` with (fill the link line from Task 4):
+Replace `ros2/README.md` with:
 ````markdown
 # ROS2
 
@@ -1625,7 +1656,7 @@ ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP address>
 Starts the bridge, `robot_state_publisher`, the LIDAR driver on `/tmp/ttyLIDAR`, `scan_resampler` and the EKF
 (`use_ekf:=false` for wheel odometry only). The bridge alone: `ros2 launch hoverboard_bridge bridge.launch.py`.
 ESP addresses: WiFi station `192.168.1.50` (default static IP), WiFi access point `192.168.4.1`, USB `192.168.7.1`.
-Link used for navigation: <from esp32s3/README.md, "Link results">.
+Link used on the robot: USB tethering to the on-board smartphone. WiFi remains available for bench work.
 
 Topics: `/cmd_vel` (in); `/odom`, `/odometry/filtered`, `/tf`, `/joint_states`, `/imu/data`, `/scan`, `/scan_fixed`,
 `/hoverboard/battery`, `/hoverboard/temperature` (out).
@@ -1656,7 +1687,7 @@ cd /ws/src/hoverboard_bridge && python3 -m pytest test -q
 
 - [ ] **Step 2: ESP README**
 
-In `esp32s3/README.md`, add the four UART level readings of Task 1 Step 2 to the wiring section, and append:
+In `esp32s3/README.md`, add the UART level readings of Task 1 Step 2 to the wiring section, and append:
 ```markdown
 ## ROS2
 
@@ -1671,4 +1702,5 @@ ROS2 usage (bridge, LIDAR driver, mapping, navigation): `ros2/README.md`.
 - ESP-side timestamps mapped to ROS time for LIDAR and IMU data.
 - `ros2_control` hardware interface replacing the Python node (`diff_drive_controller`).
 - Use of the LIDAR TIME sync pin.
+- Magnetometer: the WT901C sends it (packet `0x54`) and the ESP ignores it. Evaluate only if the heading still drifts after Task 9: record the field while turning, with motors off and on (hub motor magnets are the expected problem). Using it needs changes in the firmware, the protocol and the bridge.
 - Battery-aware behaviour (low battery warning, docking).

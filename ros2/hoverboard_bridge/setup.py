@@ -27,6 +27,7 @@ setup(
         'console_scripts': [
             'bridge_node = hoverboard_bridge.bridge_node:main',
             'link_probe = hoverboard_bridge.link_probe:main',
+            'scan_resampler = hoverboard_bridge.scan_resampler_node:main',
         ],
     },
 )
