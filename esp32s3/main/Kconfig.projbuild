@@ -70,11 +70,11 @@ menu "Hoverboard ROS bridge"
 
     config HB_HOVER_RX_GPIO
         int "Hoverboard UART RX GPIO"
-        default 3
+        default 7
 
     config HB_HOVER_TX_GPIO
         int "Hoverboard UART TX GPIO"
-        default 4
+        default 8
 
     config HB_HOVER_BAUD
         int "Hoverboard UART baud (must match USART3_BAUD in firmware)"
@@ -99,15 +99,15 @@ menu "Hoverboard ROS bridge"
 
     config HB_IMU_RX_GPIO
         int "IMU UART RX GPIO"
-        default 5
+        default 9
         depends on HB_ENABLE_IMU
 
     config HB_IMU_TX_GPIO
         int "IMU UART TX GPIO"
-        default 6
+        default 10
         depends on HB_ENABLE_IMU
         help
-            Wired to the WT901C RX through the level shifter. Nothing is sent yet;
+            Wired directly to the WT901C RX (3.3V UART). Nothing is sent yet;
             the line idles high.
 
     config HB_IMU_BAUD
@@ -123,12 +123,12 @@ menu "Hoverboard ROS bridge"
 
     config HB_LIDAR_RX_GPIO
         int "LIDAR UART RX GPIO"
-        default 7
+        default 5
         depends on HB_ENABLE_LIDAR
 
     config HB_LIDAR_TX_GPIO
         int "LIDAR UART TX GPIO"
-        default 8
+        default 6
         depends on HB_ENABLE_LIDAR
 
     config HB_LIDAR_BAUD

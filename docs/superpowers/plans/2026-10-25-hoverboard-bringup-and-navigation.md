@@ -27,7 +27,7 @@ Open issues carried into this plan:
   `WHEEL_STATE`). The bridge loop keeps up (USB shows no loss), so the loss is in the radio link. Task 4.
 - **Station mode does not always connect.** The disconnect log does not print the reason code yet. Tasks 3 and 4.
 - **Hoverboard reboot with the ESP still powered** makes the odometry jump by up to +-4500 ticks. Task 2.
-- **UART levels of the LIDAR and IMU TX lines** are not measured yet (5V per the datasheets, behind a level shifter). Task 1.
+- **UART levels of the LIDAR and IMU TX lines** are not measured yet (LIDAR 5V behind a level shifter, IMU 3.3V wired directly). Task 1.
 - **`bridge_node` has no automated tests.** Task 5.
 
 ## Context
@@ -142,8 +142,8 @@ Expected: both wheels turn in the robot's forward direction. For each wheel that
 
 - [ ] **Step 2: Measure the UART levels of the LIDAR and the IMU**
 
-With everything powered and idle, measure with a multimeter, against GND, the LIDAR TX and the WT901C TX on the high-voltage side of the level shifter (HV1, HV3), then the matching low-voltage side (LV1, LV3).
-Expected: HV about 5V or 3.3V, LV about 3.3V and never above 3.6V. Report the four readings; they go into the "Wiring" section of `esp32s3/README.md` in Task 12. If an LV reading is above 3.6V, stop and disconnect that line: the ESP GPIO is not 5V tolerant.
+With everything powered and idle, measure with a multimeter, against GND, the LIDAR TX on the high-voltage side of the level shifter (HV3), then on the matching low-voltage side (LV3), then the WT901C TX at the ESP (GPIO9, wired directly).
+Expected: HV3 about 5V or 3.3V, LV3 and GPIO9 about 3.3V and never above 3.6V. Report the three readings; they go into the "Wiring" section of `esp32s3/README.md` in Task 12. If the LV3 or GPIO9 reading is above 3.6V, stop and disconnect that line: the ESP GPIO is not 5V tolerant.
 
 - [ ] **Step 3: Wheel radius (robot on the floor)**
 
