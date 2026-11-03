@@ -21,3 +21,22 @@ def test_short_inputs_are_rejected():
     assert lp.decode(b'\x10\x00') is None
     assert lp.parse_wheel_state(b'\x00' * 10) is None
     assert lp.parse_imu(b'\x00' * 10) is None
+
+
+def _count(seqs):
+    counter = lp.SeqLossCounter()
+    for seq in seqs:
+        counter.update(seq)
+    return counter
+
+
+def test_seq_loss_counter_counts_gaps():
+    counter = _count([1, 2, 5])
+    assert (counter.received, counter.lost) == (3, 2)
+    assert counter.loss_ratio() == 2 / 5
+
+
+def test_seq_loss_counter_handles_wrap_and_duplicates():
+    assert _count([65534, 65535, 0, 1]).lost == 0
+    assert _count([5, 5, 6]).lost == 0
+    assert lp.SeqLossCounter().loss_ratio() == 0.0

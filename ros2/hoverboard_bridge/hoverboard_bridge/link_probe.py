@@ -59,6 +59,7 @@ def main():
     rpm_sum = [0.0, 0.0]
     rpm_count = 0
     lidar_bytes = 0
+    loss = lp.SeqLossCounter()
     t_start = time.monotonic()
     t_cmd = t_print = 0.0
 
@@ -79,6 +80,7 @@ def main():
             msg = lp.decode(data)
             if msg is None:
                 continue
+            loss.update(msg.seq)
             if msg.type == lp.MSG_WHEEL_STATE:
                 state = lp.parse_wheel_state(msg.body)
                 if state is not None and state.status & lp.STATUS_HOVER_OK:
@@ -106,6 +108,7 @@ def main():
         seq += 1
         time.sleep(0.05)
     print_ticks_per_rev(first_state, state, last_time - first_time, rpm_sum, rpm_count)
+    print(f'datagrams: received={loss.received} lost={loss.lost} ({100 * loss.loss_ratio():.1f}%)')
 
 
 if __name__ == '__main__':

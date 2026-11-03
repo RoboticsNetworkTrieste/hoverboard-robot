@@ -34,6 +34,8 @@ Open issues carried into this plan:
 - **`bridge_node` has no automated tests.** Task 5.
 - **Resoldered hoverboard TX -> GPIO7 line.** It was found open circuit after the assembly and then repaired. Closed on 2026-11-03: the user considers the connections sound and stable after the floor runs, so the `bad` counter check was not run.
 - **Backward beep during turns in place.** Irregular beeps while rotating, most likely `BEEPS_BACKWARD` in the mainboard firmware (`Src/main.c`: a wheel command below -50 with negative mean speed; at 0.5 rad/s the inner wheel command is about -53). The user wants it removed: `BEEPS_BACKWARD` is 0 in `hoverboard/config.patch`, but the mainboard has not been reflashed yet, so it still beeps. This is the only mainboard firmware change in this plan.
+- **`inflation_radius` too small for the footprint.** It is 0.45 m, the front corners are 0.57 m from `base_link`, and the planner only considers `base_link`, so a goal can leave the board front against a wall. Proposed: try 0.6 m, checking that doors stay passable, with a bag of `/scan_fixed`, TF and `/odom` to separate cable and wall warnings. Deferred by the user as a refinement; goes in Task 11 Step 7, still open.
+- **EKF diverges when the ESP link is lost.** With the USB cable off, `/odometry/filtered` kept integrating with no input (-4.26 m/s and a position of (3.29, 7.99) with the robot still). After a link loss the stack must be restarted. A goal still active when the link returns would start from a wrong pose. Not fixed yet.
 
 ## Context
 
@@ -296,7 +298,7 @@ Expected: `[esp] ... Hoverboard feedback resumed, tick reference reset` once the
 - Modify: `ros2/hoverboard_bridge/hoverboard_bridge/link_probe.py`
 - Test: `ros2/hoverboard_bridge/test/test_link_protocol.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `ros2/hoverboard_bridge/test/test_link_protocol.py`:
 ```python
@@ -319,12 +321,12 @@ def test_seq_loss_counter_handles_wrap_and_duplicates():
     assert lp.SeqLossCounter().loss_ratio() == 0.0
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test/test_link_protocol.py -q`
 Expected: FAIL with `AttributeError: module 'hoverboard_bridge.link_protocol' has no attribute 'SeqLossCounter'`.
 
-- [ ] **Step 3: Implement the counter**
+- [x] **Step 3: Implement the counter**
 
 Append to `ros2/hoverboard_bridge/hoverboard_bridge/link_protocol.py`:
 ```python
@@ -349,12 +351,12 @@ class SeqLossCounter:
         return self.lost / total if total else 0.0
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run (container, from `/ws/src/hoverboard_bridge`): `python3 -m pytest test -q`
 Expected: all tests pass (`20 passed`).
 
-- [ ] **Step 5: Print the loss in `link_probe`**
+- [x] **Step 5: Print the loss in `link_probe`**
 
 In `ros2/hoverboard_bridge/hoverboard_bridge/link_probe.py`, `main()`:
 
@@ -373,6 +375,8 @@ After the final `print_ticks_per_rev(...)` call add:
 
 Run (host, from `ros2/hoverboard_bridge`): `python3 -m hoverboard_bridge.link_probe --host 127.0.0.1 --duration 1`
 Expected: `no telemetry` lines, then `datagrams: received=0 lost=0 (0.0%)`, no exception.
+
+Result (2026-11-03): the new tests failed with the expected `AttributeError`, then passed. 28 passed in the container (the 20 above predates later tests), 25 passed and 1 skipped module on the host. `link_probe` on `127.0.0.1` prints the expected line. Steps 6 and 7 (ESP firmware) not done yet.
 
 - [ ] **Step 6: Log the WiFi disconnect reason and the signal**
 
@@ -1631,14 +1635,16 @@ Expected: all Nav2 servers are created and configured with no parameter errors (
 
 Result (2026-11-03): with no map and with `home_map`, all processes start, no `WARN`, `ERROR` or dead process in 18 s, only the expected waits for TF. `map_server` reads `home_map`, 170 x 225 cells at 0.05 m. The `footprint` in `nav2.yaml` uses the Task 8 Step 1 values: front 0.47, rear 0.135, left and right 0.33.
 
-- [ ] **Step 4: Low speed response (robot on the floor)**
+- [x] **Step 4: Low speed response (robot on the floor)**
 
 Nav2 slows down near goals and on curves, so the motors must follow small commands.
 Run (container, terminal 1): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP>`
 For `x` in 0.05, 0.1 and 0.2, run for a few seconds `ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{linear: {x: <x>}}"` and read `ros2 topic echo /odom --field twist.twist.linear.x`.
 Expected: the robot moves and the measured speed is within about 20% of the command. Report the lowest speed that moves the robot smoothly; if it is above 0.05, raise `min_approach_linear_velocity` and `regulated_linear_scaling_min_speed` in `nav2.yaml` to that value.
 
-- [ ] **Step 5: Navigate while mapping (robot on the floor)**
+Result (2026-11-03): measured mean speed 0.051 at 0.05 m/s, 0.094 at 0.1 m/s, 0.198 at 0.2 m/s; distance from the ticks within 3 cm of the command. `vx` comes from the integer rpm of the mainboard, so it swings widely (0 to 0.117 m/s at 0.05 m/s, 27% of the samples at zero). The motion at 0.05 m/s is not smooth by eye. The user chose 0.2 m/s as the minimum, so both values are 0.2 in `nav2.yaml`.
+
+- [x] **Step 5: Navigate while mapping (robot on the floor)**
 
 Run (container, terminal 1): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP>`
 Run (container, terminal 2): `ros2 launch hoverboard_bringup nav.launch.py`
@@ -1646,11 +1652,15 @@ Run (container, terminal 3): `rviz2 -d /opt/ros/humble/share/nav2_bringup/rviz/n
 Send a goal 2 m away with "Nav2 Goal" in RViz, then one behind an obstacle.
 Expected: a path appears, the robot follows it at up to 0.3 m/s, stops within 0.15 m of the goal, and goes around the obstacle. Pull the USB cable or stop terminal 1 during a run once: the robot stops within 1 s (bridge, ESP and mainboard watchdogs).
 
-- [ ] **Step 6: Navigate on a saved map (robot on the floor)**
+Result (2026-11-03), several goals sent by the user from RViz, no contact with anything: 5 goal requests, 2 `Goal succeeded` (one ended 1.2 cm from the target by the map pose), 2 replaced by the user before arrival because the map showed a wall there, 1 `Goal failed`. In the failed one the robot stopped about 6 cm from the target, with the board front edge about 6 cm from a wall, and spin and backup recoveries failed; the final heading could not be reached there. The log has 244 `detected collision ahead`; how many came from the USB cable passing in front of the LIDAR and how many from walls is unknown (no bag recorded). Stop test: the USB cable came off by accident during the saved map session, the robot stopped at once by eye (not timed) and the mainboard gave 3 beeps (serial timeout). The ESP is probably powered by that cable, so its 300 ms watchdog is still untested on the floor.
+
+- [x] **Step 6: Navigate on a saved map (robot on the floor)**
 
 Run (container, terminal 2): `ros2 launch hoverboard_bringup nav.launch.py map:=/ws/src/hoverboard_bringup/maps/<name>.yaml`
 In RViz set the robot pose with "2D Pose Estimate", drive a little with teleop until the AMCL particle cloud converges, then send goals.
 Expected: the scan stays aligned with the map walls while moving; goals reached as in Step 5.
+
+Result (2026-11-03), `home_map`: initial pose published at the map origin with the robot at the start point, so no teleop was needed for convergence. 97% of the scan points within 15 cm of a map wall at the start, 94% after the first goal. First goal reached 3.9 cm from the target by the AMCL pose, second goal reached around the box without contact. One start-up stalled with `map_server` at `Configuring` (`failed to send response to /map_server/change_state`); a relaunch of Nav2 cleared it, cause not investigated.
 
 - [ ] **Step 7: Tuning record**
 

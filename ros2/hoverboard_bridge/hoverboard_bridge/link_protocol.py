@@ -75,3 +75,24 @@ def parse_imu(body):
         return None
     values = IMU_STATE.unpack(body)
     return ImuState(values[0:3], values[3:6], values[6:9])
+
+
+class SeqLossCounter:
+    """Counts lost ESP->PC datagrams from gaps in the shared 16-bit seq field."""
+
+    def __init__(self):
+        self.received = 0
+        self.lost = 0
+        self._last = None
+
+    def update(self, seq):
+        if self._last is not None:
+            gap = (seq - self._last - 1) & 0xFFFF
+            if gap < 0x8000:  # Larger gaps are duplicates or reordering
+                self.lost += gap
+        self._last = seq
+        self.received += 1
+
+    def loss_ratio(self):
+        total = self.received + self.lost
+        return self.lost / total if total else 0.0
