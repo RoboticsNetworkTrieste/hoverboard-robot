@@ -1,6 +1,8 @@
 # ROS2 Humble container
 
 The ROS2 side of the project targets Humble. This container provides it on any Linux host with Docker.
+To run the robot, use the scripts in [`scripts/`](../../scripts/), which start this container by themselves: see
+[`ros2/README.md`](../../ros2/README.md). Open a container directly for debugging or calibration.
 
 ```
 tools/docker-humble/run.sh --build     # first time, or after editing the Dockerfile
@@ -18,7 +20,9 @@ tools/docker-humble/run.sh <command>   # one command, e.g. ros2 topic list
 - GUI tools (`rviz2`): run `xhost +local:` on the host once per login session.
 - Every shell opened with `run.sh` is a new container; several can run at the same time and see each other's topics.
 
-## Manual driving
+## Link check by manual driving
+
+Quick check of the bridge and the LIDAR, without EKF, SLAM or Nav2.
 
 ```
 tools/docker-humble/teleop_debug.sh [esp_host]   # default 192.168.7.1 (USB)

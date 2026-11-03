@@ -1674,7 +1674,9 @@ Write the values changed while testing (footprint, speeds, inflation, AMCL, `sla
 - Rewrite: `ros2/README.md`
 - Modify: `esp32s3/README.md`
 
-- [ ] **Step 1: ROS2 README**
+Result (2026-11-03): done, extended on request with `scripts/` and the `stack_mapping` and `stack_navigation` launch files. Checked without the robot (ESP address `127.0.0.1`): both stacks start, `save_map.sh` saves the map served by `map_server`, Ctrl-C stops everything. The two whole-stack launches have not run on the robot yet.
+
+- [x] **Step 1: ROS2 README**
 
 Replace `ros2/README.md` with:
 ````markdown
@@ -1724,7 +1726,7 @@ cd /ws/src/hoverboard_bridge && python3 -m pytest test -q
 ```
 ````
 
-- [ ] **Step 2: ESP README**
+- [x] **Step 2: ESP README**
 
 In `esp32s3/README.md`, add the UART level readings of Task 1 Step 2 to the wiring section, and append:
 ```markdown

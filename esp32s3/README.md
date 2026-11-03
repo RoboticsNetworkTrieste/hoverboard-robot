@@ -51,6 +51,10 @@ the pads on the top and bottom faces are left unsoldered.
 The ESP GPIOs are not 5V tolerant: the LIDAR UART lines (5V) always go through the shifter.
 Before plugging the USB-C cable, disconnect the step-down output from the ESP 5V pin.
 
+Reference multimeter readings against GND, everything powered: HV4 5V, LV4 3.3V, WT901C TX at most 3.3V; HV3 about 2.8V
+and LV3 about 1.9V with the LIDAR streaming (averages, as the line toggles; peaks not measured).
+LV3 and the WT901C TX must never exceed 3.6V.
+
 ## Bench tests
 Run the probe with the host Python 3 from `ros2/hoverboard_bridge`; no ROS or container needed.
 The ROS2 container reaches the same addresses, but it cannot resolve `hoverboard.local`: use the IP there.
@@ -91,8 +95,7 @@ udp: Telemetry peer <PC IP>:<port>            (each time a probe starts)
    right speed with the opposite sign), both tick counters increasing. The final lines print `ticks_per_rev~N`,
    about 90; use `--left 100 --right 100 --duration 10` for a better estimate.
 4. Command watchdog: run test 3 with a longer `--duration` and press Ctrl+C mid-run. The wheels stop within about 0.5s
-   (ESP timeout `HB_CMD_TIMEOUT_MS` plus the firmware deceleration). To measure the ESP timeout alone, without the
-   hoverboard, use the "Watchdog flag" script in Task 9 Step 7 of `docs/superpowers/plans/2026-09-13-hoverboard-ros-udp-bridge.md`.
+   (ESP timeout `HB_CMD_TIMEOUT_MS` plus the firmware deceleration).
 
 ### Troubleshooting
 | Symptom | Likely cause |
@@ -142,3 +145,6 @@ Access point results:
 
 The limit is attributed to the small on-board antenna. This is an engineering judgement: the tests did not isolate
 the antenna, and no external antenna, other PC positions, AMPDU off or actual PHY rate were tested.
+
+## ROS2
+ROS2 usage (bridge, LIDAR driver, mapping, navigation): [`ros2/README.md`](../ros2/README.md).

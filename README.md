@@ -6,14 +6,44 @@ An ESP32-S3 connects to the hoverboard mainboard, an IMU and a LIDAR, and bridge
 to ROS2 over UDP on USB tethering. The firmware also supports WiFi, but it is not usable on the current
 ESP32-S3 board (see "Link results" in `esp32s3/README.md`).
 
+```
+Hoverboard mainboard --UART--+
+WT901C IMU ----------UART----+-- ESP32-S3 --USB tethering (UDP)-- PC: ROS2 in Docker
+STL-50B2 LIDAR ------UART----+                                    bridge, EKF, slam_toolbox or AMCL, Nav2
+```
+
 ## Repository layout
 | Folder | Content |
 |---|---|
-| [`esp32s3/`](esp32s3/) | ESP-IDF firmware for the ESP32-S3 bridge |
-| [`ros2/`](ros2/) | ROS2 packages |
+| [`esp32s3/`](esp32s3/) | ESP-IDF firmware for the ESP32-S3 bridge, wiring |
+| [`ros2/`](ros2/) | ROS2 packages: usage, calibration, troubleshooting |
+| [`scripts/`](scripts/) | Start the robot in mapping or navigation mode, save a map, drive by keyboard |
 | [`hoverboard/`](hoverboard/) | Mainboard firmware (submodule) and its configuration patch |
-| [`tools/`](tools/) | Bench tests: Arduino UART link test, LIDAR viewer |
-| [`docs/`](docs/) | Hardware notes and design documents |
+| [`tools/`](tools/) | ROS2 Docker container; bench tests: Arduino UART link test, LIDAR viewer |
+| [`docs/`](docs/) | Hardware notes and pictures |
+
+## Quick start
+First setup, once:
+1. [Get the code](#getting-the-code) and install the [PC prerequisites](#pc-prerequisites).
+2. Build and flash the [hoverboard mainboard firmware](#hoverboard-mainboard-firmware).
+3. Wire the robot ([`esp32s3/README.md`](esp32s3/README.md#wiring)), then build and flash the
+   [ESP32-S3 firmware](#esp32-s3-firmware).
+4. Build the ROS2 container: `tools/docker-humble/run.sh --build`.
+5. Connect the PC to the ESP by USB and check it with `ping 192.168.7.1`
+   (details in [`ros2/README.md`](ros2/README.md#before-the-first-run)).
+
+Then run the robot, from the repo root:
+```
+# Build a new map
+scripts/start_mapping.sh          # terminal 1: whole stack and RViz
+scripts/teleop.sh                 # terminal 2: drive around with the keyboard
+scripts/save_map.sh my_map        # terminal 3: save the map, before stopping terminal 1
+
+# Navigate on a saved map
+scripts/start_navigation.sh my_map
+```
+On a saved map, set the robot position with "2D Pose Estimate" in RViz, then send goals with "Nav2 Goal".
+The full guide is in [`ros2/README.md`](ros2/README.md).
 
 ## Getting the code
 ```
@@ -84,8 +114,15 @@ The [Espressif Installation Manager (EIM)](https://docs.espressif.com/projects/i
 is an alternative installer; in that case activate with `. ~/.espressif/tools/activate_idf_v5.4.4.sh`.
 For VS Code, the ESP-IDF extension can reuse this installation instead of downloading a new one.
 
+### Docker (ROS2)
+ROS2 runs in a container, so it is not installed on the host. Install
+[Docker Engine with the Compose plugin](https://docs.docker.com/engine/install/ubuntu/), and allow your user to run it:
+```
+sudo usermod -aG docker $USER
+```
+Log out and back in for the group change to take effect.
+
 ### Optional
-- ROS2: needed by the packages in [`ros2/`](ros2/) (work in progress).
 - Arduino IDE or `arduino-cli`: for [`tools/arduino_hoverboard_test`](tools/arduino_hoverboard_test/).
 - Python packages for the LIDAR viewer: `pip install -r tools/lidar/requirements.txt`.
 
