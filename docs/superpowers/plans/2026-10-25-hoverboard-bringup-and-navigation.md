@@ -127,9 +127,9 @@ ros2/
     launch/robot.launch.py     bridge + robot_state_publisher + LIDAR + resampler + EKF
     launch/slam.launch.py      slam_toolbox (mapping)
     launch/nav.launch.py       Nav2, with slam_toolbox or with AMCL on a saved map
-  maps/                        saved maps, git-ignored
+    maps/                      saved maps, git-ignored
 tools/docker-humble/Dockerfile                                modify: navigation packages
-.gitignore                                                    modify: ros2/maps/
+.gitignore                                                    modify: ros2/hoverboard_bringup/maps/
 ```
 
 ---
@@ -1148,7 +1148,7 @@ Mean absolute error: 1.2 deg `/odom`, 0.9 deg filtered. The filtered error is la
 
 Precondition: the robot linked by USB tethering (see "Target deployment").
 
-- [ ] **Step 1: Configuration**
+- [x] **Step 1: Configuration**
 
 Create `ros2/hoverboard_bringup/config/slam.yaml` (the `slam_toolbox` online async defaults, with the frames, the scan topic, the LIDAR range and the update thresholds adapted to this robot):
 ```yaml
@@ -1222,7 +1222,7 @@ slam_toolbox:
     occupancy_threshold: 0.1
 ```
 
-- [ ] **Step 2: Launch file**
+- [x] **Step 2: Launch file**
 
 Create `ros2/hoverboard_bringup/launch/slam.launch.py`:
 ```python
@@ -1245,16 +1245,18 @@ def generate_launch_description():
 Append to `.gitignore`:
 ```
 # Maps saved by slam_toolbox / map_saver_cli (environment specific)
-ros2/maps/
+ros2/hoverboard_bringup/maps/
 ```
 
-- [ ] **Step 3: Build and check without hardware**
+- [x] **Step 3: Build and check without hardware**
 
 Run (container, from `/ws`): `colcon build --symlink-install && source install/setup.bash`
 Run (container): `ros2 launch hoverboard_bringup slam.launch.py`
 Expected: `slam_toolbox` starts and waits for TF and scans, with no parameter errors.
 
-- [ ] **Step 4: Map a room (robot on the floor)**
+Result (2026-11-03): builds, `slam_toolbox` starts with the Ceres solver and no parameter errors. Run for 8 s only, without scans or TF.
+
+- [x] **Step 4: Map a room (robot on the floor)**
 
 Run (container, terminal 1): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP>`
 Run (container, terminal 2): `ros2 launch hoverboard_bringup slam.launch.py`
@@ -1263,10 +1265,14 @@ Run (container, terminal 4): `ros2 run teleop_twist_keyboard teleop_twist_keyboa
 Drive slowly around the room and back to the start; turn slowly (fast turns blur the scans at 7 Hz).
 Expected: walls are straight and single (not doubled), the map closes when returning to the start. No `LaserRangeScan contains ... range readings, expected ...` errors in terminal 2.
 
-- [ ] **Step 5: Save the map**
+Result (2026-11-03), USB tethering: driven by keyboard through the whole home and back to the start. Map 8.50 x 11.25 m at 0.05 m, straight and single walls, some 2 to 3 cells thick; the user checked it against the home. No errors or warnings from `slam_toolbox`, the bridge or the EKF. At the start point the robot is 4.8 cm, 4.2 cm and -2.3 deg from the map origin; the fused odometry alone reads about 29 cm and 6 deg, and `map -> odom` is about 34 cm and -8.4 deg. The log does not show whether a loop closure fired.
 
-Run (container): `mkdir -p /ws/src/maps && ros2 run nav2_map_server map_saver_cli -f /ws/src/maps/<name>`
-Expected: `/ws/src/maps/<name>.yaml` and `.pgm` (repo folder `ros2/maps/`). Open the `.pgm` and check that it matches the room.
+- [x] **Step 5: Save the map**
+
+Run (container): `mkdir -p /ws/src/hoverboard_bringup/maps && ros2 run nav2_map_server map_saver_cli -f /ws/src/hoverboard_bringup/maps/<name>`
+Expected: `/ws/src/hoverboard_bringup/maps/<name>.yaml` and `.pgm` (repo folder `ros2/hoverboard_bringup/maps/`). Open the `.pgm` and check that it matches the room.
+
+Result (2026-11-03): saved as `home_map`, confirmed by the user.
 
 ---
 
@@ -1278,7 +1284,7 @@ Expected: `/ws/src/maps/<name>.yaml` and `.pgm` (repo folder `ros2/maps/`). Open
 
 `nav2_bringup/navigation_launch.py` starts the controller, planner, smoother, behaviours, BT navigator, waypoint follower and velocity smoother; the controller publishes `/cmd_vel_nav` and the velocity smoother turns it into `/cmd_vel` for the bridge. Localization is either `slam_toolbox` (map built while navigating) or AMCL on a map saved in Task 10.
 
-- [ ] **Step 1: Nav2 parameters**
+- [x] **Step 1: Nav2 parameters**
 
 Create `ros2/hoverboard_bringup/config/nav2.yaml` (set `footprint` from Task 8 Step 1 as `[[front, left], [front, -right], [-rear, -right], [-rear, left]]`):
 ```yaml
@@ -1573,7 +1579,7 @@ velocity_smoother:
     velocity_timeout: 1.0
 ```
 
-- [ ] **Step 2: Launch file**
+- [x] **Step 2: Launch file**
 
 Create `ros2/hoverboard_bringup/launch/nav.launch.py`:
 ```python
@@ -1615,11 +1621,13 @@ def generate_launch_description():
     ])
 ```
 
-- [ ] **Step 3: Build and check without hardware**
+- [x] **Step 3: Build and check without hardware**
 
 Run (container, from `/ws`): `colcon build --symlink-install && source install/setup.bash`
 Run (container): `ros2 launch hoverboard_bringup nav.launch.py`
-Expected: all Nav2 servers are created and configured with no parameter errors (they wait for TF, so activation stops at `Waiting for transform` messages). Stop it. Run `ros2 launch hoverboard_bringup nav.launch.py map:=/ws/src/maps/<name>.yaml`: `map_server` loads the map with no error.
+Expected: all Nav2 servers are created and configured with no parameter errors (they wait for TF, so activation stops at `Waiting for transform` messages). Stop it. Run `ros2 launch hoverboard_bringup nav.launch.py map:=/ws/src/hoverboard_bringup/maps/<name>.yaml`: `map_server` loads the map with no error.
+
+Result (2026-11-03): with no map and with `home_map`, all processes start, no `WARN`, `ERROR` or dead process in 18 s, only the expected waits for TF. `map_server` reads `home_map`, 170 x 225 cells at 0.05 m. The `footprint` in `nav2.yaml` uses the Task 8 Step 1 values: front 0.47, rear 0.135, left and right 0.33.
 
 - [ ] **Step 4: Low speed response (robot on the floor)**
 
@@ -1638,7 +1646,7 @@ Expected: a path appears, the robot follows it at up to 0.3 m/s, stops within 0.
 
 - [ ] **Step 6: Navigate on a saved map (robot on the floor)**
 
-Run (container, terminal 2): `ros2 launch hoverboard_bringup nav.launch.py map:=/ws/src/maps/<name>.yaml`
+Run (container, terminal 2): `ros2 launch hoverboard_bringup nav.launch.py map:=/ws/src/hoverboard_bringup/maps/<name>.yaml`
 In RViz set the robot pose with "2D Pose Estimate", drive a little with teleop until the AMCL particle cloud converges, then send goals.
 Expected: the scan stays aligned with the map walls while moving; goals reached as in Step 5.
 
@@ -1686,14 +1694,14 @@ Calibrated wheel parameters: `hoverboard_bridge/config/bridge.yaml`. Robot geome
 ```
 ros2 launch hoverboard_bringup slam.launch.py
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p speed:=0.2 -p turn:=0.6
-ros2 run nav2_map_server map_saver_cli -f /ws/src/maps/<name>
+ros2 run nav2_map_server map_saver_cli -f /ws/src/hoverboard_bringup/maps/<name>
 ```
-Maps are saved in `ros2/maps/` (git-ignored).
+Maps are saved in `ros2/hoverboard_bringup/maps/` (git-ignored).
 
 ## Navigation
 ```
 ros2 launch hoverboard_bringup nav.launch.py                               # with slam_toolbox
-ros2 launch hoverboard_bringup nav.launch.py map:=/ws/src/maps/<name>.yaml # with AMCL
+ros2 launch hoverboard_bringup nav.launch.py map:=/ws/src/hoverboard_bringup/maps/<name>.yaml # with AMCL
 rviz2 -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz
 ```
 With AMCL, set the start pose with "2D Pose Estimate" before sending goals.

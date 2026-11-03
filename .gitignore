@@ -10,3 +10,6 @@ esp32s3/sdkconfig
 esp32s3/sdkconfig.old
 .pytest_cache/
 *.egg-info/
+
+# Maps saved by slam_toolbox / map_saver_cli (environment specific)
+ros2/hoverboard_bringup/maps/
