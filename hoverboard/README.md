@@ -13,11 +13,12 @@ PC prerequisites, ST-Link wiring and board unlock: see the [main README](../READ
 ## How the configuration patch works
 The submodule always points to an unmodified upstream commit. Our settings are not committed
 inside it: they are stored in this folder as `config.patch`, a plain `git diff` of the
-submodule. It touches two files:
+submodule. It touches three files:
 
 | File | Changes |
 |---|---|
-| `Inc/config.h` | Control variant, control mode, limits, timeouts |
+| `Inc/config.h` | Control variant, control mode, limits, timeouts, motion beep settings |
+| `Src/main.c` | Motion beep: active while a wheel command is above `BEEPS_MOVING_THRES`, in any direction |
 | `platformio.ini` | `default_envs = VARIANT_USART` |
 
 This keeps our changes small, readable in one file, and easy to carry over to a newer upstream version.
@@ -60,7 +61,7 @@ Apply the patch by hand, edit, then save the new diff and clean the submodule:
 ```
 cd hoverboard-firmware-hack-FOC
 git apply ../config.patch          # start from the current configuration
-# edit Inc/config.h, platformio.ini
+# edit Inc/config.h, Src/main.c, platformio.ini
 git diff > ../config.patch         # save the full set of changes
 git checkout .                     # restore the submodule
 cd ..

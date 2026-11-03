@@ -1,5 +1,5 @@
 diff --git a/Inc/config.h b/Inc/config.h
-index 8f697f4..09eb916 100644
+index 8f697f4..0b5466f 100644
 --- a/Inc/config.h
 +++ b/Inc/config.h
 @@ -114,7 +114,7 @@
@@ -27,17 +27,19 @@ index 8f697f4..09eb916 100644
  
  // Field Weakening / Phase Advance
  #define FIELD_WEAK_ENA  0               // [-] Field Weakening / Phase Advance enable flag: 0 = Disabled (default), 1 = Enabled
-@@ -181,7 +181,7 @@
+@@ -181,8 +181,9 @@
  
  // ############################## DEFAULT SETTINGS ############################
  // Default settings will be applied at the end of this config file if not set before
 -#define INACTIVITY_TIMEOUT        8       // Minutes of not driving until poweroff. it is not very precise.
-+#define INACTIVITY_TIMEOUT        30       // Minutes of not driving until poweroff. it is not very precise.
 -#define BEEPS_BACKWARD            1       // 0 or 1
-+#define BEEPS_BACKWARD            0       // 0 or 1
++#define INACTIVITY_TIMEOUT        30       // Minutes of not driving until poweroff. it is not very precise.
++#define BEEPS_MOVING              1       // 0 or 1. Beep while a wheel command is above BEEPS_MOVING_THRES
++#define BEEPS_MOVING_THRES        5       // [-] Wheel command magnitude that triggers the motion beep, range 0-1000
  #define ADC_MARGIN                100     // ADC input margin applied on the raw ADC min and max to make sure the MIN and MAX values are reached even in the presence of noise
  #define ADC_PROTECT_TIMEOUT       100     // ADC Protection: number of wrong / missing input commands before safety state is taken
-@@ -312,8 +312,8 @@
+ #define ADC_PROTECT_THRESH        200     // ADC Protection threshold below/above the MIN/MAX ADC values
+@@ -312,8 +313,8 @@
      #define DEBUG_SERIAL_USART3           // right sensor board cable, disable if I2C (nunchuk or lcd) is used!
    #endif
  
@@ -48,7 +50,7 @@ index 8f697f4..09eb916 100644
    // #define SUPPORT_BUTTONS_LEFT            // use left sensor board cable for button inputs.  Disable DEBUG_SERIAL_USART2!
    // #define SUPPORT_BUTTONS_RIGHT           // use right sensor board cable for button inputs. Disable DEBUG_SERIAL_USART3!
  #endif
-@@ -324,12 +324,12 @@
+@@ -324,12 +325,12 @@
  // ############################ VARIANT_USART SETTINGS ############################
  #ifdef VARIANT_USART
    // #define SIDEBOARD_SERIAL_USART2 0
@@ -65,7 +67,7 @@ index 8f697f4..09eb916 100644
   
    // #define DUAL_INPUTS                 //  UART*(Primary) + SIDEBOARD(Auxiliary). Uncomment this to use Dual-inputs
    #define PRI_INPUT1             3, -1000, 0, 1000, 0     // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
-@@ -344,7 +344,7 @@
+@@ -344,7 +345,7 @@
      #define FLASH_WRITE_KEY      0x1002  // Flash memory writing key. Change this key to ignore the input calibrations from the flash memory and use the ones in config.h
    #endif
  
@@ -74,6 +76,19 @@ index 8f697f4..09eb916 100644
    // #define SUPPORT_BUTTONS_LEFT       // use left sensor board cable for button inputs.  Disable DEBUG_SERIAL_USART2!
    // #define SUPPORT_BUTTONS_RIGHT      // use right sensor board cable for button inputs. Disable DEBUG_SERIAL_USART3!
  #endif
+diff --git a/Src/main.c b/Src/main.c
+index d4ab511..fa01d11 100644
+--- a/Src/main.c
++++ b/Src/main.c
+@@ -588,7 +588,7 @@ int main(void) {
+       beepCount(0, 10, 6);
+     } else if (BAT_LVL2_ENABLE && batVoltage < BAT_LVL2) {                                            // 1 beep slow (medium pitch): Low bat 2
+       beepCount(0, 10, 30);
+-    } else if (BEEPS_BACKWARD && (((cmdR < -50 || cmdL < -50) && speedAvg < 0) || MultipleTapBrake.b_multipleTap)) { // 1 beep fast (high pitch): Backward spinning motors
++    } else if (BEEPS_MOVING && (ABS(cmdR) > BEEPS_MOVING_THRES || ABS(cmdL) > BEEPS_MOVING_THRES)) { // 1 beep fast (high pitch): Motion command active
+       beepCount(0, 5, 1);
+       backwardDrive = 1;
+     } else {  // do not beep
 diff --git a/platformio.ini b/platformio.ini
 index d7612db..00fbe47 100644
 --- a/platformio.ini
