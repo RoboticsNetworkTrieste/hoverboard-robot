@@ -29,7 +29,7 @@ Open issues:
   USB tethering (2026-10-25, WiFi off, same 20 s test with hoverboard, IMU and LIDAR connected): 3000 datagrams
   at 150 msg/s, 0 lost, `CMD_TIMEOUT` in 0 of 1000 `WHEEL_STATE`, ping 0% lost at ~2.3 ms. The bridge loop and the
   send path keep up, so the WiFi loss is in the radio link.
-  Still to compare: access point mode (one hop), PC on Ethernet, ESP closer to the router.
+  Closed on 2026-11-03: WiFi is not pursued on this board, see `esp32s3/README.md`, "Link results".
 - **Station mode connection is unreliable.** On 2026-10-18 the ESP joined the router in station mode (static IP
   and DHCP), but in earlier sessions it failed to connect and access point mode was used instead. Not explained
   yet; the disconnect log does not print the reason code, which would be the first clue.

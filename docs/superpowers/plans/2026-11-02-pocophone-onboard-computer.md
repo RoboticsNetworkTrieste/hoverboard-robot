@@ -485,7 +485,7 @@ Report for each setup: whether `status` shows `Charging`, the `current_ua` sign,
 |---|---|
 | All gates pass | Write the follow-up plan: power from the robot, mounting and cooling, ROS2 autostart at boot, kernel update procedure, full Nav2 load check |
 | Gate 1 fails | WiFi or boot problem: try the other kernel variant or a newer image once. Then try Mobian, or replace the phone |
-| Gate 2 fails in both setups | Try a powered hub, then the Kali NetHunter Pro procedure on Mobian. Otherwise measure WiFi access point mode with the phone next to the ESP (Task 4 row D of the bring-up plan, which needs an ESP reflash), or replace the phone |
+| Gate 2 fails in both setups | Try a powered hub, then the Kali NetHunter Pro procedure on Mobian. Otherwise replace the phone. WiFi to the ESP is not a fallback on this board (`esp32s3/README.md`, "Link results") |
 | Gate 3 fails | Same as Gate 2, after trying another cable and the other power setup |
 | Gate 4 fails | Docker error: try a kernel with the missing options, or run ROS2 in a plain Ubuntu 22.04 root filesystem in a chroot. Otherwise replace the phone |
 | Gate 5 fails | Temperature: add passive cooling and repeat. Autonomy: solve the power supply and repeat. CPU: lower the expected load (LIDAR rate, map resolution) or replace the phone |

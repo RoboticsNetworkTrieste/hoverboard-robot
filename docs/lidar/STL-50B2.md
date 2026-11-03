@@ -229,7 +229,7 @@ The plot has 0° at the top and angles increasing clockwise, which is the LDROBO
 ## 11. Integration notes for this project
 
 - The hoverboard ROS2 bridge must send `54 A0 …` when it starts using the LIDAR and `54 A1 …` when it stops, through the planned `LIDAR_TX` channel.
-- The data stream (≈ 17 kB/s) fits easily in UDP over WiFi or USB.
+- The data stream (≈ 17 kB/s) fits easily in UDP over USB tethering. WiFi on the current ESP32-S3 board loses about a third of the LIDAR packets (`esp32s3/README.md`, "Link results").
 
 ## Sources
 

@@ -3,7 +3,8 @@
 A simple and cheap ROS2 mobile robot platform built on hoverboard hardware.
 
 An ESP32-S3 connects to the hoverboard mainboard, an IMU and a LIDAR, and bridges them
-to ROS2 over UDP (WiFi or USB tethering).
+to ROS2 over UDP on USB tethering. The firmware also supports WiFi, but it is not usable on the current
+ESP32-S3 board (see "Link results" in `esp32s3/README.md`).
 
 ## Repository layout
 | Folder | Content |

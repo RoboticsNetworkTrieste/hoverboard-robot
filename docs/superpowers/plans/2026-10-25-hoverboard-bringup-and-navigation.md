@@ -29,8 +29,8 @@ Done and verified on the hardware:
 
 Open issues carried into this plan:
 - **Packet loss over WiFi** (station mode: 13.5% of ESP->PC datagrams lost, in bursts; `CMD_TIMEOUT` in 67% of
-  `WHEEL_STATE`). The bridge loop keeps up (USB shows no loss), so the loss is in the radio link. Task 4.
-- **Station mode does not always connect.** The disconnect log does not print the reason code yet. Tasks 3 and 4.
+  `WHEEL_STATE`). The bridge loop keeps up (USB shows no loss), so the loss is in the radio link. Closed on 2026-11-03: access point mode also loses 33-40% on channels 1 and 6, and the user decided that WiFi is not viable on this board without a suitably sized antenna. Results are in `esp32s3/README.md`, "Link results".
+- **Station mode does not always connect.** The disconnect log does not print the reason code yet. Closed on 2026-11-03 without a fix: WiFi is no longer pursued on this board.
 - **`bridge_node` has no automated tests.** Task 5.
 - **Resoldered hoverboard TX -> GPIO7 line.** It was found open circuit after the assembly and then repaired. Closed on 2026-11-03: the user considers the connections sound and stable after the floor runs, so the `bad` counter check was not run.
 - **Backward beep during turns in place.** Irregular beeps while rotating, most likely `BEEPS_BACKWARD` in the mainboard firmware (`Src/main.c`: a wheel command below -50 with negative mean speed; at 0.5 rad/s the inner wheel command is about -53). The user wants it removed: `BEEPS_BACKWARD` is 0 in `hoverboard/config.patch`, but the mainboard has not been reflashed yet, so it still beeps. This is the only mainboard firmware change in this plan.
@@ -398,7 +398,9 @@ Expected: build succeeds with no new warnings.
 
 ---
 
-### Task 4 (optional): WiFi link comparison (hardware)
+### Task 4 (cancelled): WiFi link comparison (hardware)
+
+**Cancelled on 2026-11-03: do not run the steps below.** The user decided that WiFi is not viable on this board without a suitably sized antenna. Tests run before the decision are in `esp32s3/README.md`, "Link results". Rows A-C, E and F and the station reliability test were not run.
 
 Navigation needs a link without bursts of loss: Nav2 stops the robot when `/cmd_vel` or TF data arrive late, and the ESP watchdog stops the wheels after 300 ms without commands. The robot uses USB tethering (see "Target deployment"), so no later task depends on this one. It only measures how usable the WiFi options are for bench work.
 
@@ -1683,7 +1685,7 @@ ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP address>
 Starts the bridge, `robot_state_publisher`, the LIDAR driver on `/tmp/ttyLIDAR`, `scan_resampler` and the EKF
 (`use_ekf:=false` for wheel odometry only). The bridge alone: `ros2 launch hoverboard_bridge bridge.launch.py`.
 ESP addresses: WiFi station `192.168.1.50` (default static IP), WiFi access point `192.168.4.1`, USB `192.168.7.1`.
-Link used on the robot: USB tethering to the on-board smartphone. WiFi remains available for bench work.
+Link used on the robot: USB tethering to the on-board smartphone. WiFi is in the firmware but not usable on this board (see `esp32s3/README.md`, "Link results").
 
 Topics: `/cmd_vel` (in); `/odom`, `/odometry/filtered`, `/tf`, `/joint_states`, `/imu/data`, `/scan`, `/scan_fixed`,
 `/hoverboard/battery`, `/hoverboard/temperature` (out).

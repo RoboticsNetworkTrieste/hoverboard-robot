@@ -1,7 +1,8 @@
 # hoverboard_ros (ESP32-S3 firmware)
 
 Bridges the hoverboard mainboard, a WT901C IMU and a serial LIDAR to ROS2 over UDP.
-UDP travels over WiFi (station or access point) and/or USB tethering (CDC-NCM).
+UDP travels over USB tethering (CDC-NCM) or WiFi (station or access point).
+WiFi is not usable for driving the robot on this board: see "Link results".
 
 ## Build and configure
 ```
@@ -113,3 +114,31 @@ udp: Telemetry peer <PC IP>:<port>            (each time a probe starts)
   Protocol notes: `docs/lidar/STL-50B2.md`.
   To send an extra command by hand, for example set the speed to 7 Hz:
   `python3 -m hoverboard_bridge.link_probe --host <ESP address> --lidar-hex "54 A2 04 D8 09 00 00 16"`.
+
+## Link results
+**Decision (2026-11-03): WiFi is not usable for this robot on the Waveshare ESP32-S3-Zero. Use USB tethering.**
+WiFi station and access point remain in the firmware, but they do not meet the driving criterion: under 1% of
+datagrams lost and no `CMD_TIMEOUT`. Going back to WiFi would first need a board with a suitably sized antenna.
+
+Hoverboard, IMU and LIDAR connected, wheels still, zero wheel commands at 20 Hz. Loss comes from gaps in `seq`.
+
+| Date | Link | Duration | Datagrams lost | LIDAR packets missing | CMD_TIMEOUT | Ping lost | Ping RTT |
+|---|---|---|---|---|---|---|---|
+| 2026-10-25 | USB tethering | 20 s | 0% (0 of 3000) | not measured | 0 | 0% | about 2.3 ms |
+| 2026-10-18 | Station, via router | 20 s | 13.5%, in bursts | not measured | 67% of states | 15% | up to 1.7 s |
+| 2026-11-03 | Access point, channel 6 | 60 s | 40.4% | 36.2% | 0 | 39.7% | median 264 ms |
+| 2026-11-03 | Access point, channel 6 | 60 s | 36.8% | 32.7% | 0 | 36.9% | median 244 ms |
+| 2026-11-03 | Access point, channel 6, PC WiFi power save off | 60 s | 38.4% | 34.4% | 0 | 38.7% | median 236 ms |
+| 2026-11-03 | Access point, channel 6 | 60 s | 37.2% | 33.7% | 0 | 36.4% | median 243 ms |
+| 2026-11-03 | Access point, channel 1 | 60 s | 33.3% | 29.8% | 0 | 37.7% | median 235 ms |
+
+Access point results:
+- About 120 datagrams/s of the 180 sent arrive, with little change across channel and PC power save settings.
+  `WHEEL_STATE` arrives at about 30 Hz instead of 50 Hz. The received LIDAR data has 0 CRC errors.
+- The PC disconnects every few seconds until the ESP starts sending telemetry, on both channels. The PC misses the
+  ESP beacons, then drops the link (46 drops in about 5.5 minutes on channel 1, 0 in the 150 s after zero wheel
+  commands started). The ESP did not reboot during these drops.
+- With USB tethering the same traffic has no loss, so the bridge loop and the send path keep up.
+
+The limit is attributed to the small on-board antenna. This is an engineering judgement: the tests did not isolate
+the antenna, and no external antenna, other PC positions, AMPDU off or actual PHY rate were tested.
