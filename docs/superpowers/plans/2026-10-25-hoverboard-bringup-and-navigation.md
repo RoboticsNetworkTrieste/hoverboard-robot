@@ -32,7 +32,7 @@ Open issues carried into this plan:
   `WHEEL_STATE`). The bridge loop keeps up (USB shows no loss), so the loss is in the radio link. Task 4.
 - **Station mode does not always connect.** The disconnect log does not print the reason code yet. Tasks 3 and 4.
 - **`bridge_node` has no automated tests.** Task 5.
-- **Resoldered hoverboard TX -> GPIO7 line.** It was found open circuit after the assembly and then repaired. Check that `bad` in `link_probe` stays steady after the first floor runs (Task 1).
+- **Resoldered hoverboard TX -> GPIO7 line.** It was found open circuit after the assembly and then repaired. Closed on 2026-11-03: the user considers the connections sound and stable after the floor runs, so the `bad` counter check was not run.
 - **Backward beep during turns in place.** Irregular beeps while rotating, most likely `BEEPS_BACKWARD` in the mainboard firmware (`Src/main.c`: a wheel command below -50 with negative mean speed; at 0.5 rad/s the inner wheel command is about -53). The user wants it removed: `BEEPS_BACKWARD` is 0 in `hoverboard/config.patch`, but the mainboard has not been reflashed yet, so it still beeps. This is the only mainboard firmware change in this plan.
 
 ## Context
@@ -997,7 +997,7 @@ Expected: `Bridging to ESP at 127.0.0.1`, `robot_state_publisher` lists the link
 
 Result (2026-11-02): both packages build, all four nodes run, `tf2_echo` gives the measured offsets (`laser_link` 0.225, 0, 0.21, yaw 90 deg). The URDF and `lidar.yaml` use the Step 1 values, plus `excluded_sectors_deg` for the wheels. Without data the LIDAR node does not wait: it exits about every 5 s with `communication is abnormal` and is respawned. This is harmless with no ESP connected.
 
-- [ ] **Step 6: Hardware check: TF tree, LIDAR and IMU orientation (robot on the floor)**
+- [x] **Step 6: Hardware check: TF tree, LIDAR and IMU orientation (robot on the floor)**
 
 Run (container): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP>`
 Run (container, second shell): `rviz2 -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz`, set Fixed Frame to `odom`, set the LaserScan display topic to `/scan_fixed`.
@@ -1006,6 +1006,8 @@ Checks:
 2. Place a box about 1 m straight in front of the robot. Expected: the scan shows it on the +x axis of `base_link`. If it appears elsewhere, set the yaw of `laser_joint` (`rpy="0 0 <yaw>"`, radians) to rotate it onto +x; if it appears mirrored (left and right swapped), set `laser_scan_dir: false`. Relaunch and repeat.
 3. Points that fall on the robot itself (a ring very close to the LIDAR, or fixed points on chassis parts): mask their angle range with `excluded_sectors_deg` of `scan_resampler` in `config/lidar.yaml` (degrees, in the LIDAR's own frame). The driver crop allows only one range, and the wheels need two.
 4. Rotate the robot counterclockwise seen from above (`ros2 topic pub -r 10 /cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}"`) and watch `ros2 topic echo /imu/data --field angular_velocity`. Expected: `z` positive. With the robot still, `linear_acceleration.z` is about +9.8. If not, set the `imu_joint` `rpy` so the IMU axes map onto `base_link` (for example `rpy="3.1416 0 0"` for a board mounted upside down), relaunch and repeat.
+
+Result (2026-11-03), USB tethering: no change needed. TF tree as expected, `odom -> base_link` at 50 Hz. `/scan` and `/scan_fixed` at 7.0 Hz, 360 beams, about 300 valid. Box about 1 m ahead seen at x = 0.97, y = 0.00, bearing -8.5..+8.5 deg, and the RViz view is correct; left/right not repeated, confirmed in Step 1 with the same configuration. `excluded_sectors_deg` covers the wheels (raw points at about 24..48 and 132..155 deg, 0.30 to 0.39 m), closest point in `/scan_fixed` 0.74 m. Standing still: acceleration -0.17, -0.19, +9.81 m/s^2 (tilt about 1.5 deg). 6 s at 0.5 rad/s counterclockwise: gyro z mean +0.516 rad/s (0.39 to 0.71), gyro x and y about 0, integrated gyro 175.1 deg, odom 176.0 deg, real just under 180 deg by eye, centre moved about 2 cm.
 
 ---
 
@@ -1017,12 +1019,14 @@ The wheels slip when the robot turns in place, so the wheel yaw rate is the weak
 - Create: `ros2/hoverboard_bringup/config/ekf.yaml`
 - Modify: `ros2/hoverboard_bringup/launch/robot.launch.py`
 
-- [ ] **Step 1: IMU rate**
+- [x] **Step 1: IMU rate**
 
 Run (container): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP>`, then in a second shell `ros2 topic hz /imu/data`.
 Expected: about 50 Hz, the rate saved in the WT901C on 2026-11-02 (measured through the ESP, not yet on `/imu/data`). If it is lower, set it again with a USB-serial adapter at 3.3V on the IMU, with the IMU disconnected from GPIO9/10 (the ESP does not forward IMU commands). At 115200 baud send `FF AA 69 88 B5` (unlock), `FF AA 03 08 00` (50 Hz), `FF AA 00 00 00` (save), then repeat. Report the rate.
 
-- [ ] **Step 2: EKF configuration**
+Result (2026-11-03): 50.2 Hz on `/imu/data`, counted over 8 s with a subscriber instead of `ros2 topic hz`.
+
+- [x] **Step 2: EKF configuration**
 
 Create `ros2/hoverboard_bringup/config/ekf.yaml`:
 ```yaml
@@ -1052,7 +1056,7 @@ ekf_filter_node:
                   false, false, false]
 ```
 
-- [ ] **Step 3: Launch the EKF**
+- [x] **Step 3: Launch the EKF**
 
 Replace `ros2/hoverboard_bringup/launch/robot.launch.py` with:
 ```python
@@ -1099,13 +1103,15 @@ def generate_launch_description():
     ])
 ```
 
-- [ ] **Step 4: Build and run without hardware**
+- [x] **Step 4: Build and run without hardware**
 
 Run (container, from `/ws`): `colcon build --symlink-install && source install/setup.bash`
 Run (container): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=127.0.0.1`
 Expected: `ekf_filter_node` starts with no parameter errors. `ros2 param get /hoverboard_bridge publish_tf` gives `False`. With `use_ekf:=false`: no EKF node and `publish_tf` is `True`.
 
-- [ ] **Step 5: Compare wheel and fused odometry (robot on the floor)**
+Result (2026-11-03): as expected in both cases.
+
+- [x] **Step 5: Compare wheel and fused odometry (robot on the floor)**
 
 Run (container): `ros2 launch hoverboard_bringup robot.launch.py esp_host:=<ESP>`
 Mark the heading on the floor, rotate one full turn in place as in Task 1 Step 4, and read both yaws:
@@ -1119,6 +1125,17 @@ done
 ```
 Repeat three times (relaunch in between) and once with two turns.
 Expected: the `/odometry/filtered` yaw error is not larger than the `/odom` error. Report both. If the filtered yaw is worse, check the sign of the gyro (Task 8 Step 6, check 4) and the IMU rate before going on; navigation can also run with `use_ekf:=false`.
+
+Result (2026-11-03), USB tethering, timed turns at 0.5 rad/s, yaw change per run instead of a relaunch. The real angle comes from the distance between the board front edge (0.47 m from `base_link`) and the tape, so 1 cm is about 1.2 deg and this is the resolution of the comparison.
+
+| Run | Real (deg) | `/odom` (deg) | Error | `/odometry/filtered` (deg) | Error |
+|---|---|---|---|---|---|
+| 1 turn | 362.4 | 362.6 | +0.2 | 361.4 | -1.0 |
+| 1 turn | 364.9 | 367.9 | +3.0 | 365.6 | +0.7 |
+| 1 turn | 360 | 360.8 | +0.8 | 359.4 | -0.6 |
+| 2 turns | 729.7 | 730.5 | +0.8 | 728.3 | -1.4 |
+
+Mean absolute error: 1.2 deg `/odom`, 0.9 deg filtered. The filtered error is larger in 2 of the 4 runs, always by less than the measurement resolution, so the two are equivalent on this floor. The filtered yaw is 1.2 to 2.3 deg lower than `/odom` in every run. `use_ekf` stays `true`.
 
 ---
 
